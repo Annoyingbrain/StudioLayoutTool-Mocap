@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Studio Layout Tool — Mocap</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app-shell">
+
+  <header id="toolbar">
+    <div class="toolbar-group">
+      <button id="btn-toggle-left" class="panel-toggle" aria-label="Toggle layers panel">☰ Layers</button>
+      <strong class="brand">Studio Layout Tool — Mocap</strong>
+      <input id="setup-name" type="text" value="Untitled Setup" spellcheck="false">
+    </div>
+    <div class="toolbar-group">
+      <button id="btn-new">New</button>
+      <button id="btn-save-local">Save</button>
+      <select id="setup-picker"><option value="">Load setup…</option></select>
+      <button id="btn-export-json">Export .json</button>
+      <label class="file-btn">Import .json<input id="import-json" type="file" accept="application/json"></label>
+    </div>
+    <div class="toolbar-group">
+      <button id="btn-export-csv">Export CSV (Disguise)</button>
+      <button id="btn-export-floor-png">Export Floor PNG (Disguise)</button>
+      <button id="btn-report">Report / Print</button>
+      <button id="btn-toggle-right" class="panel-toggle" aria-label="Toggle inspector panel">Inspector ⚙</button>
+    </div>
+  </header>
+
+  <div id="main-body">
+
+    <div id="panel-backdrop"></div>
+
+    <aside id="left-panel">
+
+      <button id="btn-close-left" class="panel-close" aria-label="Close panel">✕ Close</button>
+
+      <section class="panel" id="scene-panel">
+        <h3>Position</h3>
+        <select id="scene-picker"></select>
+        <label>Position name <input id="scene-name" type="text"></label>
+        <div class="tool-row">
+          <button id="btn-new-scene">+ New Position</button>
+          <button id="btn-delete-scene" class="danger">Delete Position</button>
+        </div>
+        <p class="hint">Each position has its own props and frame grab.</p>
+      </section>
+
+      <section class="panel" id="prop-list-panel">
+        <h3>Props <span id="prop-count" class="muted"></span></h3>
+        <div id="prop-list"></div>
+      </section>
+
+      <section class="panel">
+        <h3>Tools</h3>
+        <div class="tool-row">
+          <button id="tool-select" class="tool-btn active" data-tool="select">Select / Move</button>
+          <button id="tool-add-prop" class="tool-btn" data-tool="add-prop">+ Add Prop</button>
+        </div>
+        <div class="tool-row">
+          <label class="chk"><input type="checkbox" id="chk-grid" checked> Show grid</label>
+          <label class="chk"><input type="checkbox" id="chk-studio-sketch" checked> Show studio sketch</label>
+          <label class="chk">px/m: <input type="number" id="view-scale" value="40" min="4" max="400" step="1"></label>
+        </div>
+      </section>
+
+      <section class="panel" id="framegrab-panel">
+        <h3>Frame Grab Reference</h3>
+        <label class="file-btn block">Import frame grab<input id="import-framegrab" type="file" accept="image/*"></label>
+        <img id="framegrab-thumb" class="thumb hidden" alt="frame grab">
+        <textarea id="framegrab-caption" placeholder="Caption / camera notes…" rows="2"></textarea>
+      </section>
+
+      <section class="panel" id="github-panel">
+        <h3>GitHub Sync</h3>
+        <label>Personal Access Token <input id="gh-token" type="password" placeholder="github_pat_…" autocomplete="off" spellcheck="false"></label>
+        <div class="two-col">
+          <label>Owner <input id="gh-owner" type="text" placeholder="e.g. Annoyingbrain" spellcheck="false"></label>
+          <label>Repo <input id="gh-repo" type="text" placeholder="e.g. StudioLayoutTool-Setups" spellcheck="false"></label>
+        </div>
+        <label>Branch <input id="gh-branch" type="text" placeholder="main" value="main" spellcheck="false"></label>
+        <button id="btn-save-github">Save Setup to GitHub</button>
+        <div id="gh-status" class="small muted"></div>
+        <p class="hint">Saves this setup (all its positions, props, frame grabs) as one JSON file (setups/&lt;id&gt;.json, overwritten on every save) to the repo above, via GitHub's API. The token is stored only in this browser — use a fine-grained token scoped to just that one repo with Contents: read/write.</p>
+
+        <div class="subheading">Load from GitHub</div>
+        <select id="gh-load-picker"><option value="">Fill in token/owner/repo first</option></select>
+        <button id="btn-refresh-github-list">Refresh List</button>
+      </section>
+
+    </aside>
+
+    <main id="canvas-wrap">
+      <canvas id="studio-canvas"></canvas>
+      <div id="canvas-hint" class="canvas-hint"></div>
+    </main>
+
+    <aside id="right-panel">
+
+      <button id="btn-close-right" class="panel-close" aria-label="Close panel">✕ Close</button>
+
+      <section class="panel" id="inspector-panel">
+        <h3>Prop Inspector</h3>
+        <select id="insp-prop-picker"><option value="">Select a prop…</option></select>
+        <div id="inspector-empty" class="muted small">Select a prop to edit its properties.</div>
+        <div id="inspector-fields" class="hidden">
+          <label>Name <input id="insp-name" type="text"></label>
+          <label>Shape
+            <select id="insp-shape">
+              <option value="rect">Rectangular</option>
+              <option value="circle">Circular</option>
+              <option value="triangle">Triangular</option>
+            </select>
+          </label>
+          <label>Size units
+            <select id="insp-size-unit">
+              <option value="m">meters (m)</option>
+              <option value="cm">centimeters (cm)</option>
+            </select>
+          </label>
+          <div class="two-col">
+            <label><span id="insp-width-label-text">Length</span> <input id="insp-width" type="number" step="0.01" min="0.01"><span class="size-readout" id="insp-width-readout"></span></label>
+            <label id="insp-depth-field">Width <input id="insp-depth" type="number" step="0.01" min="0.01"><span class="size-readout" id="insp-depth-readout"></span></label>
+          </div>
+          <label>Height (info only) <input id="insp-height" type="number" step="0.01" min="0"><span class="size-readout" id="insp-height-readout"></span></label>
+          <div class="two-col">
+            <label>X (m) <input id="insp-x" type="number" step="0.001"></label>
+            <label>Y (m) <input id="insp-y" type="number" step="0.001"></label>
+          </div>
+          <label id="insp-rot-field">Rotation (deg) <input id="insp-rot" type="number" step="1"></label>
+          <label>Color <input id="insp-color" type="color" value="#4da6ff"></label>
+          <label>Notes <textarea id="insp-notes" rows="2"></textarea></label>
+          <div class="position-source small muted" id="insp-position-source"></div>
+          <button id="btn-delete-prop" class="danger">Delete Prop</button>
+        </div>
+      </section>
+
+      <section class="panel" id="motive-panel">
+        <h3>Motive Capture</h3>
+        <div id="motive-empty" class="muted small">Select a prop to capture points from Motive.</div>
+        <div id="motive-fields" class="hidden">
+          <div class="tool-row">
+            <span>Wand tip extension (mm)</span>
+            <input type="number" id="tip-extension-input" step="0.1" min="0" style="width: 5em;">
+          </div>
+          <p class="hint">Distance from the marker line's tip-end to the wand's actual touch tip, measured once with a ruler. Captured positions aren't trustworthy until this is set correctly -- see js/motive/motiveCalibration.js.</p>
+          <div id="point-selector" class="tool-row"></div>
+          <label class="file-btn block">Load Motive CSV for this point<input id="motive-csv-input" type="file" accept=".csv"></label>
+          <div id="motive-capture-result" class="small"></div>
+          <div id="points-status"></div>
+          <button id="btn-solve-object" disabled>Solve Object Position &amp; Rotation</button>
+          <p class="hint">Capture at least 2 points (e.g. two corners, or a corner + center) to solve both position and rotation. A single point can only reposition the prop — its current rotation is kept.</p>
+        </div>
+      </section>
+
+    </aside>
+  </div>
+</div>
+
+<div id="report-view" class="hidden"></div>
+
+<script src="js/utils/dom.js"></script>
+<script src="js/utils/id.js"></script>
+<script src="js/utils/geometry.js"></script>
+<script src="js/rigidFit.js"></script>
+<script src="js/motive/motiveCsv.js"></script>
+<script src="js/motive/wandTip.js"></script>
+<script src="js/motive/motiveTransform.js"></script>
+<script src="js/motive/motiveCalibration.js"></script>
+<script src="js/studioSketch.js"></script>
+<script src="js/state.js"></script>
+<script src="js/persistence.js"></script>
+<script src="js/canvas.js"></script>
+<script src="js/csvExport.js"></script>
+<script src="js/floorPngExport.js"></script>
+<script src="js/reportExport.js"></script>
+<script src="js/ui/sidebar.js"></script>
+<script src="js/ui/motiveCapture.js"></script>
+<script src="js/ui/githubSync.js"></script>
+<script src="js/ui/toolbar.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
