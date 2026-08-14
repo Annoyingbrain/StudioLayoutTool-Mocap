@@ -32,6 +32,11 @@ window.App = window.App || {};
   let latestByName = {};
   const listeners = [];
 
+  // See handleFrame: incoming frames are throttled to this interval before
+  // being written into the Store (~30Hz).
+  const APPLY_INTERVAL_MS = 33;
+  let lastApplyMs = 0;
+
   function emit() { listeners.forEach(fn => fn()); }
 
   // Rotates local +Y (0,1,0) by a unit quaternion (x,y,z,w) -- see
@@ -96,8 +101,26 @@ window.App = window.App || {};
     getLatest(rigidBodyName) { return latestByName[rigidBodyName] || null; },
 
     // Called by js/motive/liveConnection.js on each incoming frame.
+    //
+    // Frames arrive at Motive's full capture rate (120/s). Writing every one
+    // into the Store would re-render the whole app -- canvas, sidebar,
+    // inspector -- 120 times a second, which is both wasteful and actively
+    // harmful (it fights the user's typing in the inspector's X/Y fields).
+    // Applying at ~30Hz is indistinguishable to the eye for watching a prop
+    // move. A frame that adds a rigid body not seen before still emits
+    // immediately, so a newly-enabled asset shows up in the UI at once
+    // rather than waiting on the throttle.
     handleFrame(rigidBodies) {
-      rigidBodies.forEach(rb => { latestByName[rb.name] = rb; });
+      let sawNewName = false;
+      rigidBodies.forEach(rb => {
+        if (!(rb.name in latestByName)) sawNewName = true;
+        latestByName[rb.name] = rb;
+      });
+
+      const now = (window.performance && performance.now()) ? performance.now() : Date.now();
+      if (!sawNewName && now - lastApplyMs < APPLY_INTERVAL_MS) return;
+      lastApplyMs = now;
+
       Object.keys(assignments).forEach(name => {
         const rb = latestByName[name];
         if (!rb || !rb.tracking) return;

@@ -41,9 +41,28 @@ window.App = window.App || {};
     return options;
   }
 
+  // Live frames arrive at Motive's full rate (120/s), and both liveTracking
+  // and the Store emit on each one. Rebuilding this list on every emit
+  // destroys and recreates the <select> elements ~120 times a second, which
+  // makes them impossible to actually use -- a dropdown snaps shut the
+  // instant it's opened. So the rows are only rebuilt when something
+  // STRUCTURAL changes (which rigid bodies exist, what they're assigned to,
+  // which props/cameras exist to choose from); per-frame updates just
+  // rewrite the status text in place, touching no <select> at all.
+  function structureKey() {
+    const names = App.liveTracking.getKnownNames().sort().join('|');
+    const assignments = JSON.stringify(App.liveTracking.getAssignments());
+    const entities = App.Store.getCameras().map(c => `c${c.id}:${c.name}`)
+      .concat(App.Store.getScene().props.map(p => `p${p.id}:${p.name}`)).join('|');
+    return `${names}##${assignments}##${entities}##${App.liveConnection.isConnected()}`;
+  }
+
+  const statusElByName = {};
+
   function renderRigidBodyList() {
     const container = dom.qs('#live-rigidbody-list');
     dom.clear(container);
+    Object.keys(statusElByName).forEach(k => delete statusElByName[k]);
     const names = App.liveTracking.getKnownNames();
     if (!names.length) {
       container.appendChild(dom.el('div', { class: 'small muted', text: App.liveConnection.isConnected() ? 'Waiting for rigid bodies from Motive…' : 'Not connected.' }));
@@ -61,21 +80,45 @@ window.App = window.App || {};
         }
       }, entityOptions(assignment && assignment.entityType, assignment && assignment.entityId));
 
+      const statusEl = dom.el('span', {
+        class: 'psr-status' + (latest && latest.tracking ? ' solved' : ''),
+        text: latest && latest.tracking ? 'tracking' : 'no data'
+      });
+      statusElByName[name] = statusEl;
+
       const row = dom.el('div', { class: 'point-status-row' }, [
         dom.el('span', { class: 'psr-label', text: name }),
-        dom.el('span', {
-          class: 'psr-status' + (latest && latest.tracking ? ' solved' : ''),
-          text: latest && latest.tracking ? 'tracking' : 'no data'
-        }),
+        statusEl,
         select
       ]);
       container.appendChild(row);
     });
   }
 
+  // Per-frame path: text only, no element replacement, so an open <select>
+  // is never disturbed.
+  function updateRigidBodyStatuses() {
+    Object.keys(statusElByName).forEach(name => {
+      const latest = App.liveTracking.getLatest(name);
+      const tracking = !!(latest && latest.tracking);
+      const el = statusElByName[name];
+      const text = tracking ? 'tracking' : 'no data';
+      if (el.textContent !== text) el.textContent = text;
+      el.className = 'psr-status' + (tracking ? ' solved' : '');
+    });
+  }
+
+  let lastStructureKey = null;
+
   function render() {
     renderStatus();
-    renderRigidBodyList();
+    const key = structureKey();
+    if (key !== lastStructureKey) {
+      lastStructureKey = key;
+      renderRigidBodyList();
+    } else {
+      updateRigidBodyStatuses();
+    }
   }
 
   function initRotationOffsetInput() {
