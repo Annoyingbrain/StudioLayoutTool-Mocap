@@ -6,6 +6,8 @@ window.App = window.App || {};
   const geo = App.geometry;
   const HANDLE_R = 6;
   const ROT_HANDLE_R = 7;
+  const DIR_ARROW_LEN_M = 0.15; // how far past the prop's front edge the direction arrow extends
+  const DIR_ARROW_HEAD_PX = 7;
 
   let canvas, ctx, wrap;
   let dragState = null;
@@ -105,6 +107,36 @@ window.App = window.App || {};
     ctx.restore();
   }
 
+  // Small arrow past a rectangular prop's front edge (local +Y, the same
+  // "front" direction the rotation handle already uses -- see
+  // js/utils/geometry.js's rotationHandlePos), always visible so a prop's
+  // facing direction reads at a glance without having to select it.
+  function drawDirectionArrow(view, prop) {
+    const hd = prop.depthM / 2;
+    const baseWorld = geo.rotatePoint(prop.x, prop.y + hd, prop.x, prop.y, prop.rotationDeg);
+    const tipWorld = geo.rotatePoint(prop.x, prop.y + hd + DIR_ARROW_LEN_M, prop.x, prop.y, prop.rotationDeg);
+    const base = geo.worldToScreen(view, baseWorld.x, baseWorld.y);
+    const tip = geo.worldToScreen(view, tipWorld.x, tipWorld.y);
+    const angle = Math.atan2(tip.y - base.y, tip.x - base.x);
+
+    ctx.save();
+    ctx.strokeStyle = prop.color;
+    ctx.fillStyle = prop.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(base.x, base.y);
+    ctx.lineTo(tip.x, tip.y);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(tip.x, tip.y);
+    ctx.lineTo(tip.x - DIR_ARROW_HEAD_PX * Math.cos(angle - Math.PI / 6), tip.y - DIR_ARROW_HEAD_PX * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(tip.x - DIR_ARROW_HEAD_PX * Math.cos(angle + Math.PI / 6), tip.y - DIR_ARROW_HEAD_PX * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
   function drawProp(view, prop, selected) {
     const isCircle = prop.shape === 'circle';
     const center = geo.worldToScreen(view, prop.x, prop.y);
@@ -136,6 +168,8 @@ window.App = window.App || {};
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.restore();
+
+    if (prop.shape === 'rect') drawDirectionArrow(view, prop);
 
     if (prop.positionSource === 'measured') {
       ctx.save();

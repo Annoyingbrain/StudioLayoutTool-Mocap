@@ -90,7 +90,15 @@ App.motiveCsv = (function () {
       const groups = groupColumns(typeRow, nameRow);
 
       const rbGroup = groups.find(g => g.type === 'Rigid Body' && g.count === 7);
-      const markerGroups = groups.filter(g => g.type === 'Marker' && g.count === 3);
+      const allMarkerGroups = groups.filter(g => g.type === 'Marker' && g.count === 3);
+      // Only the primary Rigid Body's own markers matter for capture math --
+      // a real take often has other tracked objects or stray "Unlabeled"
+      // reflections in view too, and those shouldn't cause an otherwise-good
+      // frame (this asset fully tracked) to be dropped by the isValidXYZ
+      // check below just because something unrelated had a dropout.
+      const markerGroups = rbGroup
+        ? allMarkerGroups.filter(g => g.name === rbGroup.name || g.name.startsWith(rbGroup.name + ':'))
+        : allMarkerGroups;
       const rbMarkerGroups = groups.filter(g => g.type === 'Rigid Body Marker' && g.count === 3);
 
       if (!rbGroup) console.warn('[motiveCsv] no 7-column Rigid Body group found (rotation quat + position)');
