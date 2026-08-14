@@ -22,6 +22,7 @@
 # running on this same machine (127.0.0.1) with multicast streaming, which
 # is Motive's default "Local Loopback" setup.
 import argparse
+import concurrent.futures
 import json
 import sys
 import threading
@@ -96,6 +97,63 @@ def natnet_loop(client, ws_server, stop_event, units_to_mm):
         websockets.broadcast(ws_server.connections, message)
 
 
+# NatNetClient.connect(timeout=...) doesn't reliably bound how long it can
+# block: internally it first does an untimed wait for its own background
+# thread's sockets to come up, and only *then* applies the timeout you pass
+# to the actual server handshake. If that first wait stalls -- e.g. joining
+# a multicast group on the loopback interface, which is unreliable on
+# Windows -- connect() hangs forever regardless of the timeout argument.
+# Running it in its own thread and giving up on *that* after a hard
+# deadline is the only way to bound it from the outside.
+CONNECT_HARD_TIMEOUT_SEC = 15.0
+
+
+def connect_with_hard_timeout(client, soft_timeout):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        future = ex.submit(client.connect, soft_timeout)
+        try:
+            return future.result(timeout=soft_timeout + CONNECT_HARD_TIMEOUT_SEC)
+        except concurrent.futures.TimeoutError:
+            print(
+                f"[natnet] connect() didn't respond within {soft_timeout + CONNECT_HARD_TIMEOUT_SEC:.0f}s -- "
+                "it's stuck rather than just refused (a plain refusal fails almost instantly). This usually "
+                "means multicast group setup is hanging, which is a known Windows issue when both Motive and "
+                "this bridge are on the same machine using loopback -- try switching Motive's Streaming pane "
+                "Transmission Type to Unicast (Motive still supports multiple simultaneous clients, e.g. "
+                "Unreal, in Unicast mode), or set both sides' Local Interface to the machine's real LAN IP "
+                "instead of loopback. The stuck connection attempt keeps running in the background; Live mode "
+                "just won't have anything until you fix the Motive-side setting and restart this script.",
+                file=sys.stderr,
+            )
+            return False
+
+
+def connect_and_stream(natnet_params, ws_server, stop_event):
+    client = NatNetClient(natnet_params)
+    connected = connect_with_hard_timeout(client, natnet_params.connection_timeout or 5.0)
+    if not connected:
+        print(
+            f"Could not connect to Motive at {natnet_params.server_address}:{natnet_params.data_port} "
+            "-- the app will still load, but Live mode will have nothing to show. "
+            "Check Motive is running with streaming enabled, and --server-address/--use-multicast "
+            "match its Streaming settings.",
+            file=sys.stderr,
+        )
+        return
+
+    units_to_mm = 1000.0  # NatNet's documented wire default is meters
+    try:
+        units_to_mm = client.UnitesToMillimeters()
+    except Exception as e:
+        print(f"[natnet] couldn't query UnitesToMillimeters, assuming meters (1000): {e}", file=sys.stderr)
+
+    print(f"Connected to Motive at {natnet_params.server_address} (units_to_mm={units_to_mm})")
+    try:
+        natnet_loop(client, ws_server, stop_event, units_to_mm)
+    finally:
+        client.shutdown()
+
+
 def ws_handler(websocket):
     # No messages expected from the browser -- just keep the connection
     # open (and registered in ws_server.connections for broadcast()) until
@@ -141,40 +199,21 @@ def main():
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     print(f"Serving app at         http://localhost:{args.http_port}/")
 
+    # The WS/HTTP servers come up immediately regardless of whether Motive
+    # is reachable -- the Motive connection attempt (which can stall, see
+    # connect_with_hard_timeout above) runs in its own background thread so
+    # it can never block the app from loading or the bridge from accepting
+    # browser connections.
     stop_event = threading.Event()
-    client = NatNetClient(natnet_params)
-    connected = client.connect(timeout=natnet_params.connection_timeout or 5.0)
-    units_to_mm = 1000.0  # NatNet's documented wire default is meters
-    if connected:
-        try:
-            units_to_mm = client.UnitesToMillimeters()
-        except Exception as e:
-            print(f"[natnet] couldn't query UnitesToMillimeters, assuming meters (1000): {e}", file=sys.stderr)
-    else:
-        print(
-            f"Could not connect to Motive at {natnet_params.server_address}:{natnet_params.data_port} "
-            "-- the app will still load, but Live mode will have nothing to show. "
-            "Check Motive is running with streaming enabled, and --server-address/--use-multicast "
-            "match its Streaming settings.",
-            file=sys.stderr,
-        )
-
     with ws_serve(ws_handler, args.host, args.ws_port) as ws_server:
         print(f"Live bridge WebSocket at ws://localhost:{args.ws_port}/")
-        if connected:
-            print(f"Connected to Motive at {natnet_params.server_address} (units_to_mm={units_to_mm})")
-            natnet_thread = threading.Thread(
-                target=natnet_loop, args=(client, ws_server, stop_event, units_to_mm), daemon=True
-            )
-            natnet_thread.start()
+        threading.Thread(target=connect_and_stream, args=(natnet_params, ws_server, stop_event), daemon=True).start()
         try:
             ws_server.serve_forever()
         except KeyboardInterrupt:
             pass
         finally:
             stop_event.set()
-            if connected:
-                client.shutdown()
 
 
 if __name__ == "__main__":
