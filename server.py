@@ -22,7 +22,6 @@
 # running on this same machine (127.0.0.1) with multicast streaming, which
 # is Motive's default "Local Loopback" setup.
 import argparse
-import concurrent.futures
 import json
 import sys
 import threading
@@ -100,32 +99,41 @@ def natnet_loop(client, ws_server, stop_event, units_to_mm):
 # NatNetClient.connect(timeout=...) doesn't reliably bound how long it can
 # block: internally it first does an untimed wait for its own background
 # thread's sockets to come up, and only *then* applies the timeout you pass
-# to the actual server handshake. If that first wait stalls -- e.g. joining
-# a multicast group on the loopback interface, which is unreliable on
-# Windows -- connect() hangs forever regardless of the timeout argument.
-# Running it in its own thread and giving up on *that* after a hard
-# deadline is the only way to bound it from the outside.
+# to the actual server handshake. If that first wait stalls -- e.g. binding/
+# joining on an interface that never gets a reply -- connect() hangs forever
+# regardless of the timeout argument. Running it in its own DAEMON thread
+# and giving up on *that* after a hard deadline is the only way to bound it
+# from the outside -- deliberately not concurrent.futures.ThreadPoolExecutor
+# here: its `with` block's shutdown(wait=True) blocks until the submitted
+# task finishes, which defeats the entire point when that task is the one
+# that's stuck. A daemon thread we simply stop waiting on (and never join
+# again) can't block this function, the rest of the app, or process exit --
+# it just leaks harmlessly as a stuck background thread if connect() really
+# never returns.
 CONNECT_HARD_TIMEOUT_SEC = 15.0
 
 
 def connect_with_hard_timeout(client, soft_timeout):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-        future = ex.submit(client.connect, soft_timeout)
-        try:
-            return future.result(timeout=soft_timeout + CONNECT_HARD_TIMEOUT_SEC)
-        except concurrent.futures.TimeoutError:
-            print(
-                f"[natnet] connect() didn't respond within {soft_timeout + CONNECT_HARD_TIMEOUT_SEC:.0f}s -- "
-                "it's stuck rather than just refused (a plain refusal fails almost instantly). This usually "
-                "means multicast group setup is hanging, which is a known Windows issue when both Motive and "
-                "this bridge are on the same machine using loopback -- try switching Motive's Streaming pane "
-                "Transmission Type to Unicast (Motive still supports multiple simultaneous clients, e.g. "
-                "Unreal, in Unicast mode), or set both sides' Local Interface to the machine's real LAN IP "
-                "instead of loopback. The stuck connection attempt keeps running in the background; Live mode "
-                "just won't have anything until you fix the Motive-side setting and restart this script.",
-                file=sys.stderr,
-            )
-            return False
+    result = {}
+
+    def worker():
+        result['connected'] = client.connect(soft_timeout)
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    t.join(timeout=soft_timeout + CONNECT_HARD_TIMEOUT_SEC)
+    if t.is_alive():
+        print(
+            f"[natnet] connect() didn't respond within {soft_timeout + CONNECT_HARD_TIMEOUT_SEC:.0f}s -- "
+            "it's stuck rather than just refused (a plain refusal fails almost instantly). Try switching "
+            "Motive's Streaming pane Transmission Type between Multicast/Unicast, and/or set both sides' "
+            "Local Interface to the machine's real LAN IP instead of loopback. The stuck connection attempt "
+            "keeps running in the background (harmless, but won't recover on its own); Live mode just won't "
+            "have anything until you fix the Motive-side setting and restart this script.",
+            file=sys.stderr,
+        )
+        return False
+    return result.get('connected', False)
 
 
 def connect_and_stream(natnet_params, ws_server, stop_event):
