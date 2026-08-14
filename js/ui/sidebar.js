@@ -190,6 +190,19 @@ window.App = window.App || {};
     });
   }
 
+  function renderCameraPicker() {
+    const scene = App.Store.getScene();
+    const selectedId = App.Store.getSelectedCameraId();
+    const picker = dom.qs('#cam-insp-picker');
+    if (document.activeElement === picker) return;
+    dom.clear(picker);
+    picker.appendChild(dom.el('option', { value: '', text: 'Select a camera…' }));
+    scene.cameras.forEach(c => {
+      picker.appendChild(dom.el('option', { value: c.id, text: c.name }));
+    });
+    picker.value = selectedId && scene.cameras.some(c => c.id === selectedId) ? selectedId : '';
+  }
+
   function renderCameraInspector() {
     const camera = App.Store.getSelectedCamera();
     const empty = dom.qs('#camera-inspector-empty'), fields = dom.qs('#camera-inspector-fields');
@@ -202,6 +215,13 @@ window.App = window.App || {};
     setVal('#cam-insp-rot', camera.rotationDeg);
     setVal('#cam-insp-color', camera.color);
     setVal('#cam-insp-notes', camera.notes);
+    setVal('#cam-insp-focal', camera.focalLengthMm == null ? '' : camera.focalLengthMm);
+
+    // Tracking-derived, so read-only readouts rather than inputs.
+    dom.qs('#cam-insp-height-readout').textContent =
+      camera.heightM == null ? '—' : `${Math.round(camera.heightM * 100)}cm`;
+    dom.qs('#cam-insp-tilt-readout').textContent =
+      camera.tiltDeg == null ? '—' : `${camera.tiltDeg.toFixed(1)}°`;
 
     const src = dom.qs('#cam-insp-position-source');
     const drivenBy = setLiveDrivenState(['#cam-insp-x', '#cam-insp-y', '#cam-insp-rot'], 'camera', camera.id);
@@ -249,6 +269,19 @@ window.App = window.App || {};
     bind('#cam-insp-rot', 'rotationDeg', parseFloat);
     bind('#cam-insp-color', 'color');
     bind('#cam-insp-notes', 'notes');
+    // Blank clears it rather than storing NaN, so the floor PNG can tell
+    // "no lens set" from a real value.
+    dom.qs('#cam-insp-focal').addEventListener('input', e => {
+      const camera = App.Store.getSelectedCamera();
+      if (!camera) return;
+      const raw = e.target.value.trim();
+      const v = raw === '' ? null : parseFloat(raw);
+      App.Store.updateCamera(camera.id, { focalLengthMm: (v == null || isNaN(v)) ? null : v });
+    });
+
+    dom.qs('#cam-insp-picker').addEventListener('change', e => {
+      App.Store.selectCamera(e.target.value || null);
+    });
 
     dom.qs('#btn-delete-camera').addEventListener('click', () => {
       const camera = App.Store.getSelectedCamera();
@@ -313,7 +346,7 @@ window.App = window.App || {};
       bindCameraInspector();
       const renderAll = () => {
         renderPropList(); renderPropPicker(); renderInspector();
-        renderCameraList(); renderCameraInspector();
+        renderCameraList(); renderCameraPicker(); renderCameraInspector();
       };
       App.Store.subscribe(renderAll);
       // Assignment changes don't touch the Store, so without this the
@@ -321,8 +354,7 @@ window.App = window.App || {};
       // -- unassigning would leave x/y/rotation disabled indefinitely.
       App.liveTracking.subscribe(renderAll);
       App.liveRecording.subscribe(renderAll);
-      renderPropList(); renderPropPicker(); renderInspector();
-      renderCameraList(); renderCameraInspector();
+      renderAll();
     }
   };
 })();

@@ -85,10 +85,21 @@
         <p class="hint">Requires server.py running (see requirements.txt) -- the browser can't reach Motive on its own. Assign each incoming rigid body below to a camera or prop to drive its position/rotation live.</p>
         <div id="live-rigidbody-list"></div>
         <div class="tool-row">
+          <span>Forward axis</span>
+          <select id="live-forward-axis-input" style="width: 6em;">
+            <option value="+x">+X</option>
+            <option value="-x">−X</option>
+            <option value="+y">+Y</option>
+            <option value="-y">−Y</option>
+            <option value="+z">+Z</option>
+            <option value="-z">−Z</option>
+          </select>
+        </div>
+        <div class="tool-row">
           <span>Live rotation offset (deg)</span>
           <input type="number" id="live-rotation-offset-input" step="0.1" style="width: 5em;">
         </div>
-        <p class="hint">Live rotation isn't calibrated by default -- see js/motive/liveTracking.js. Point the tracked object at a known heading and adjust this until the displayed rotation matches reality.</p>
+        <p class="hint">Which of the rigid body's own local axes points the way it faces — set when the asset was created in Motive. Get this right first: if it's wrong, rotation jitters and tilt sits near ±90° with the object level, and no offset can fix that. Then use the offset to correct any remaining constant error against a known heading.</p>
       </section>
 
       <section class="panel" id="framegrab-panel">
@@ -164,6 +175,7 @@
 
       <section class="panel" id="camera-inspector-panel">
         <h3>Camera Inspector</h3>
+        <select id="cam-insp-picker"><option value="">Select a camera…</option></select>
         <div id="camera-inspector-empty" class="muted small">Select a camera to edit its properties.</div>
         <div id="camera-inspector-fields" class="hidden">
           <label>Name <input id="cam-insp-name" type="text"></label>
@@ -172,6 +184,12 @@
             <label>Y (m) <input id="cam-insp-y" type="number" step="0.001"></label>
           </div>
           <label>Rotation (deg) <input id="cam-insp-rot" type="number" step="1"></label>
+          <label>Lens (mm) <input id="cam-insp-focal" type="number" step="1" min="1" placeholder="e.g. 35"></label>
+          <div class="two-col">
+            <label>Height <span class="size-readout" id="cam-insp-height-readout">—</span></label>
+            <label>Tilt <span class="size-readout" id="cam-insp-tilt-readout">—</span></label>
+          </div>
+          <p class="hint">Height and tilt come from live tracking (Motive's up-axis and the rigid body's orientation) — they can't be typed in. Tilt shares the same uncalibrated forward-axis assumption as Rotation.</p>
           <label>Color <input id="cam-insp-color" type="color" value="#4da6ff"></label>
           <label>Notes <textarea id="cam-insp-notes" rows="2"></textarea></label>
           <div class="position-source small muted" id="cam-insp-position-source"></div>

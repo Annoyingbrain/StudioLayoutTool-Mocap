@@ -39,15 +39,29 @@ window.App = window.App || {};
 
   function emit() { listeners.forEach(fn => fn()); }
 
-  // Rotates local +Y (0,1,0) by a unit quaternion (x,y,z,w) -- see
-  // js/motive/liveTracking.js module comment for why +Y. Returns the
-  // resulting direction as a Motive-space {x,y,z} vector (unit length),
-  // suitable for App.motiveTransform.toAppDirection.
+  const AXIS_VECTORS = {
+    '+x': { x: 1, y: 0, z: 0 }, '-x': { x: -1, y: 0, z: 0 },
+    '+y': { x: 0, y: 1, z: 0 }, '-y': { x: 0, y: -1, z: 0 },
+    '+z': { x: 0, y: 0, z: 1 }, '-z': { x: 0, y: 0, z: -1 }
+  };
+
+  // Rotates the configured local forward axis
+  // (App.motiveCalibration.liveForwardAxis) by a unit quaternion (x,y,z,w),
+  // giving that axis's current direction as a Motive-space {x,y,z} unit
+  // vector -- suitable for App.motiveTransform.toAppDirection, and for
+  // reading tilt off its vertical component.
+  //
+  // v' = v + 2 * qv x (qv x v + w*v), the standard quaternion-vector
+  // rotation, so any axis works rather than just a hardcoded one.
   function rotateForwardAxis(q) {
+    const v = AXIS_VECTORS[App.motiveCalibration.liveForwardAxis] || AXIS_VECTORS['+y'];
+    const tx = q.y * v.z - q.z * v.y + q.w * v.x;
+    const ty = q.z * v.x - q.x * v.z + q.w * v.y;
+    const tz = q.x * v.y - q.y * v.x + q.w * v.z;
     return {
-      x: 2 * (q.x * q.y - q.w * q.z),
-      y: 1 - 2 * (q.x * q.x + q.z * q.z),
-      z: 2 * (q.y * q.z + q.w * q.x)
+      x: v.x + 2 * (q.y * tz - q.z * ty),
+      y: v.y + 2 * (q.z * tx - q.x * tz),
+      z: v.z + 2 * (q.x * ty - q.y * tx)
     };
   }
 
@@ -57,6 +71,18 @@ window.App = window.App || {};
     return Math.atan2(-dirApp.x, dirApp.y) * 180 / Math.PI;
   }
 
+  // Tilt is the elevation of the same forward axis the heading uses: how far
+  // above (+) or below (-) horizontal the object points. Motive's Y is the
+  // up-axis (established by motiveTransform's floor-baseline calibration),
+  // so the forward vector's Y component is its vertical part -- and since
+  // rotateForwardAxis returns a unit vector, asin of that is the angle.
+  // Inherits the same unverified "local +Y is forward" assumption as the
+  // heading, so treat it as uncalibrated until checked against a real
+  // known tilt.
+  function forwardTiltDeg(forward) {
+    return Math.asin(Math.max(-1, Math.min(1, forward.y))) * 180 / Math.PI;
+  }
+
   function applyToEntity(assignment, rb) {
     const world = App.motiveTransform.toAppWorld(rb.pos);
     const patch = {
@@ -64,12 +90,24 @@ window.App = window.App || {};
       y: Math.round(world.y * 1000) / 1000,
       positionSource: 'measured'
     };
-    const dirApp = App.motiveTransform.toAppDirection(rotateForwardAxis(rb.quat));
+    const forward = rotateForwardAxis(rb.quat);
+    const dirApp = App.motiveTransform.toAppDirection(forward);
     const rotationDeg = directionToRotationDeg(dirApp) + App.motiveCalibration.liveRotationOffsetDeg;
     patch.rotationDeg = Math.round(rotationDeg * 10) / 10;
 
-    if (assignment.entityType === 'camera') App.Store.updateCamera(assignment.entityId, patch);
-    else App.Store.updateProp(assignment.entityId, patch);
+    if (assignment.entityType === 'camera') {
+      // Height/tilt are only tracked for cameras: a prop's heightM is a
+      // hand-entered physical dimension, and overwriting it from the
+      // tracker's pivot height would be wrong (and would fight the input
+      // the same way x/y does).
+      // standoff 0: a rigid body's origin is its own pivot, not a marker
+      // resting on a surface, so there's nothing to subtract.
+      patch.heightM = Math.round(App.motiveTransform.heightFromRawY(rb.pos.y, 0) * 1000) / 1000;
+      patch.tiltDeg = Math.round(forwardTiltDeg(forward) * 10) / 10;
+      App.Store.updateCamera(assignment.entityId, patch);
+    } else {
+      App.Store.updateProp(assignment.entityId, patch);
+    }
   }
 
   App.liveTracking = {

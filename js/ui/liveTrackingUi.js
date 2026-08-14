@@ -129,16 +129,25 @@ window.App = window.App || {};
     }
   }
 
-  function initRotationOffsetInput() {
-    const input = dom.qs('#live-rotation-offset-input');
-    const stored = App.persistence.loadMotiveCalibration();
-    if (stored && stored.liveRotationOffsetDeg != null) App.motiveCalibration.liveRotationOffsetDeg = stored.liveRotationOffsetDeg;
-    input.value = App.motiveCalibration.liveRotationOffsetDeg;
-    input.addEventListener('input', () => {
-      const v = parseFloat(input.value);
+  function initCalibrationInputs() {
+    const stored = App.persistence.loadMotiveCalibration() || {};
+
+    const offset = dom.qs('#live-rotation-offset-input');
+    if (stored.liveRotationOffsetDeg != null) App.motiveCalibration.liveRotationOffsetDeg = stored.liveRotationOffsetDeg;
+    offset.value = App.motiveCalibration.liveRotationOffsetDeg;
+    offset.addEventListener('input', () => {
+      const v = parseFloat(offset.value);
       if (isNaN(v)) return;
       App.motiveCalibration.liveRotationOffsetDeg = v;
       App.persistence.saveMotiveCalibration({ liveRotationOffsetDeg: v });
+    });
+
+    const axis = dom.qs('#live-forward-axis-input');
+    if (stored.liveForwardAxis) App.motiveCalibration.liveForwardAxis = stored.liveForwardAxis;
+    axis.value = App.motiveCalibration.liveForwardAxis;
+    axis.addEventListener('change', () => {
+      App.motiveCalibration.liveForwardAxis = axis.value;
+      App.persistence.saveMotiveCalibration({ liveForwardAxis: axis.value });
     });
   }
 
@@ -155,7 +164,7 @@ window.App = window.App || {};
         App.liveTracking.reset();
       });
 
-      initRotationOffsetInput();
+      initCalibrationInputs();
 
       App.liveConnection.subscribe(render);
       App.liveTracking.subscribe(render);

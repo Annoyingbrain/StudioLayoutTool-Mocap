@@ -29,6 +29,14 @@ App.factories = {
       rotationDeg: 0,
       color: App.factories.PROP_COLORS[(colorIndex || 0) % App.factories.PROP_COLORS.length],
       notes: '',
+      // Lens focal length in mm -- typed in by hand (nothing in the tracking
+      // data knows it) and printed on the Disguise floor PNG. null = unset.
+      focalLengthMm: null,
+      // Height above the studio floor (m) and tilt (deg, + = pointing up),
+      // both derived from live tracking -- see js/motive/liveTracking.js.
+      // null until the camera has been tracked at least once.
+      heightM: null,
+      tiltDeg: null,
       positionSource: 'manual', // 'manual' | 'measured' (measured = driven by live tracking)
       // Sampled path (app-world {x,y} points) of a recorded camera move
       // (js/motive/liveRecording.js) -- purely a visual trail, not an

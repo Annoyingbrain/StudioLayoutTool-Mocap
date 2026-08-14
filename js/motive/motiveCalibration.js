@@ -13,5 +13,19 @@ App.motiveCalibration = {
   // (uncalibrated) -- to calibrate: point the tracked object at a known
   // heading, then adjust this until the live-updated rotation on screen
   // matches. Uncalibrated live rotation should not be trusted.
-  liveRotationOffsetDeg: 0
+  liveRotationOffsetDeg: 0,
+
+  // Which of the rigid body's own local axes points "forward" (the way the
+  // camera looks / the prop faces). Set when the asset was created in
+  // Motive, so it varies per asset and can't be derived from the data.
+  //
+  // This matters more than the offset above: if it's wrong, the heading is
+  // not merely rotated by a constant -- it's derived from the horizontal
+  // projection of a near-vertical axis, which is unstable nonsense, and the
+  // tilt reads ~90 degrees with the object level. Symptom to watch for:
+  // rotation jitters wildly or tilt sits near +/-90 when the camera is
+  // level. Default '+y' matches this app's own local-frame convention;
+  // Motive's default rigid body orientation often makes '+z' correct
+  // instead (with Motive's Y being up, a level forward axis is horizontal).
+  liveForwardAxis: '+y' // '+x' | '-x' | '+y' | '-y' | '+z' | '-z'
 };

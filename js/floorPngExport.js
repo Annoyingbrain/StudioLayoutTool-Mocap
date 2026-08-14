@@ -89,6 +89,23 @@ App.floorPngExport = (function () {
     ctx.restore();
   }
 
+  // The camera icon as a flat white silhouette, cached per size since every
+  // camera in an export is drawn at the same scale.
+  let whiteIconCache = null;
+  function whiteCameraIcon(w, h) {
+    const cw = Math.max(1, Math.round(w)), ch = Math.max(1, Math.round(h));
+    if (whiteIconCache && whiteIconCache.width === cw && whiteIconCache.height === ch) return whiteIconCache;
+    const off = document.createElement('canvas');
+    off.width = cw; off.height = ch;
+    const octx = off.getContext('2d');
+    octx.drawImage(cameraIcon, 0, 0, cw, ch);
+    octx.globalCompositeOperation = 'source-in';
+    octx.fillStyle = '#ffffff';
+    octx.fillRect(0, 0, cw, ch);
+    whiteIconCache = off;
+    return off;
+  }
+
   function drawCamera(ctx, toPx, scaleX, scaleY, camera) {
     const centerPx = toPx(toDisguise(camera.x, camera.y));
     const shapePx = App.geometry.cameraShapeWorldPoints(camera).map(p => toPx(toDisguise(p.x, p.y)));
@@ -106,12 +123,16 @@ App.floorPngExport = (function () {
       const w = CAMERA_ICON_WIDTH_M * ((scaleX + scaleY) / 2);
       const h = w * (cameraIcon.naturalHeight / cameraIcon.naturalWidth);
 
+      // The icon is recoloured to a flat white silhouette on its OWN canvas,
+      // never on the export's. 'source-in' composites against everything
+      // already on the target canvas, so doing it inline here used to wipe
+      // the black background and every shape drawn before this camera --
+      // ctx.save()/restore() doesn't scope that, since it's a composite of
+      // pixels rather than a state change. Confining it to a scratch canvas
+      // keeps the effect to the icon.
       ctx.translate(centerPx.x, centerPx.y);
       ctx.rotate(angle);
-      ctx.drawImage(cameraIcon, -w / 2, -h / 2, w, h);
-      ctx.globalCompositeOperation = 'source-in';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(-w / 2, -h / 2, w, h);
+      ctx.drawImage(whiteCameraIcon(w, h), -w / 2, -h / 2, w, h);
     } else {
       ctx.beginPath();
       shapePx.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
@@ -129,13 +150,30 @@ App.floorPngExport = (function () {
     ctx.fill();
     ctx.restore();
 
-    const bottomPx = Math.max(...shapePx.map(p => p.y));
+    // Anchored to the icon's own (rotation-independent) extent rather than
+    // the rotated wedge's bounding box -- otherwise the label's distance
+    // from the camera changes with heading, and at some rotations lands on
+    // top of the icon.
+    const iconHalfPx = (CAMERA_ICON_WIDTH_M * ((scaleX + scaleY) / 2)) / 2;
+    const bottomPx = centerPx.y + iconHalfPx;
     ctx.save();
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 30px Segoe UI, Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillText(camera.name, centerPx.x, bottomPx + 10);
+
+    // Lens (typed in) and height (from live tracking) on a second line, for
+    // whoever is setting the shot up from this plan. Each part is omitted
+    // when unknown rather than printed as a placeholder, so the line is
+    // dropped entirely if neither is set.
+    const details = [];
+    if (camera.focalLengthMm != null) details.push(`Lens: ${camera.focalLengthMm}mm`);
+    if (camera.heightM != null) details.push(`h: ${Math.round(camera.heightM * 100)}cm`);
+    if (details.length) {
+      ctx.font = '24px Segoe UI, Arial';
+      ctx.fillText(details.join('   '), centerPx.x, bottomPx + 46);
+    }
     ctx.restore();
   }
 
