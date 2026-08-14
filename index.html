@@ -165,6 +165,11 @@
           <p class="hint">Instead of touching a point with the wand: place a 3-marker reference tracker (e.g. the Triangle probe) flat on top of the prop and load its CSV here. Sets X/Y from its centroid and Height from Motive's Y (up-axis) reading — rotation is left as-is.</p>
           <label class="file-btn block">Load reference tracker CSV<input id="ref-tracker-csv-input" type="file" accept=".csv"></label>
           <div id="ref-tracker-result" class="small"></div>
+
+          <div class="subheading">T-bar (rectangular prop position + rotation)</div>
+          <p class="hint">For rectangular props: place the T-bar reference tracker (5 markers) on the prop and load its CSV here. Sets X/Y from the T-bar's line-center and Rotation from its 5th (offset) marker's direction — that marker should point the way the prop faces.</p>
+          <label class="file-btn block">Load T-bar CSV<input id="tbar-csv-input" type="file" accept=".csv"></label>
+          <div id="tbar-result" class="small"></div>
         </div>
       </section>
 

@@ -172,6 +172,69 @@ window.App = window.App || {};
       `<span class="${errClass}">Jitter: ${jitterMm.toFixed(2)} mm (from ${frameCentroids.length} frames)</span>`;
   }
 
+  // Another alternative to per-point wand-touch capture: load a CSV of the
+  // T-bar reference tracker (5 markers: 4 in a line + 1 offset -- same rig
+  // geometry as the wand, see App.wandTip.identifyLineAndOffset) placed on
+  // a rectangular prop. The line's own center sets X/Y; the offset (5th)
+  // marker's direction from that center sets rotation -- mapped to the
+  // prop's local +Y ("front"), the same convention js/canvas.js's direction
+  // arrow and the studio calibration itself (T-bar's 5th marker = "away
+  // from the screen") already use.
+  async function handleTbarCsvFile(file) {
+    const prop = currentProp();
+    if (!prop) return;
+    const resultEl = dom.qs('#tbar-result');
+
+    const text = await App.dom.readFileAsText(file);
+    const rbNames = App.motiveCsv.listRigidBodyNames(text);
+    const assetName = rbNames.length > 1 ? (rbNames.find(n => !/camera/i.test(n)) || rbNames[0]) : undefined;
+    const parsed = App.motiveCsv.parse(text, assetName);
+    if (!parsed || !parsed.frames.length) {
+      resultEl.innerHTML = `<span class="err-bad">Couldn't find any usable frames in that file.</span>`;
+      return;
+    }
+    if (parsed.markerLabels.length !== 5) {
+      resultEl.innerHTML = `<span class="err-bad">Expected 5 tracked markers on the T-bar, found ${parsed.markerLabels.length}.</span>`;
+      return;
+    }
+
+    const meanOf = pts => {
+      const n = pts.length;
+      return pts.reduce((acc, p) => ({ x: acc.x + p.x / n, y: acc.y + p.y / n, z: acc.z + p.z / n }), { x: 0, y: 0, z: 0 });
+    };
+
+    const centers = [], offsets = [];
+    parsed.frames.forEach(f => {
+      const { lineMarkers, orientationMarker } = App.wandTip.identifyLineAndOffset(f.markers);
+      const center = meanOf(lineMarkers);
+      centers.push(center);
+      offsets.push({ x: orientationMarker.x - center.x, y: orientationMarker.y - center.y, z: orientationMarker.z - center.z });
+    });
+
+    const avgCenter = meanOf(centers);
+    const jitterMm = Math.sqrt(centers.reduce((sum, c) => {
+      const dx = c.x - avgCenter.x, dy = c.y - avgCenter.y, dz = c.z - avgCenter.z;
+      return sum + dx * dx + dy * dy + dz * dz;
+    }, 0) / centers.length);
+    const avgOffset = meanOf(offsets);
+
+    const appPoint = App.motiveTransform.toAppWorld(avgCenter);
+    const dirApp = App.motiveTransform.toAppDirection(avgOffset);
+    const rotationDeg = Math.atan2(-dirApp.x, dirApp.y) * 180 / Math.PI;
+
+    App.Store.updateProp(prop.id, {
+      x: Math.round(appPoint.x * 1000) / 1000,
+      y: Math.round(appPoint.y * 1000) / 1000,
+      rotationDeg: Math.round(rotationDeg * 10) / 10,
+      positionSource: 'measured'
+    });
+
+    const errClass = jitterMm < 1 ? 'err-ok' : (jitterMm < 5 ? 'err-warn' : 'err-bad');
+    resultEl.innerHTML =
+      `X = ${appPoint.x.toFixed(3)} m, Y = ${appPoint.y.toFixed(3)} m, Rotation = ${rotationDeg.toFixed(1)}°<br>` +
+      `<span class="${errClass}">Jitter: ${jitterMm.toFixed(2)} mm (from ${centers.length} frames)</span>`;
+  }
+
   function solveObject() {
     const prop = currentProp();
     if (!prop) return;
@@ -206,6 +269,11 @@ window.App = window.App || {};
       dom.qs('#ref-tracker-csv-input').addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) handleReferenceTrackerCsvFile(file);
+        e.target.value = '';
+      });
+      dom.qs('#tbar-csv-input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) handleTbarCsvFile(file);
         e.target.value = '';
       });
       initTipExtensionInput();

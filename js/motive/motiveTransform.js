@@ -60,6 +60,23 @@ App.motiveTransform = {
     };
   },
 
+  // vec: a Motive-space DIRECTION (not a position -- e.g. one marker's
+  // offset from another), mm. Returns the same direction in app-world
+  // meters, with axisMap/sign/rotation applied like toAppWorld but no
+  // translate (a direction has no fixed origin to translate from).
+  toAppDirection(vec) {
+    const local = {
+      x: this.sign.appX * vec[this.axisMap.appX] * this.scaleToMeters,
+      y: this.sign.appY * vec[this.axisMap.appY] * this.scaleToMeters
+    };
+    const a = this.rotationDeg * Math.PI / 180;
+    const cos = Math.cos(a), sin = Math.sin(a);
+    return {
+      x: local.x * cos - local.y * sin,
+      y: local.x * sin + local.y * cos
+    };
+  },
+
   // rawYmm: a raw Motive Y reading (mm, the up-axis). standoffMm: how far
   // above the resting surface the tracker's own markers sit (e.g. the
   // Triangle reference tracker's markers are 1cm above whatever it's

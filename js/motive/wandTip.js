@@ -21,6 +21,12 @@
 //
 // No dependency on Motive's own marker index/order or its rigid-body local
 // axis convention -- robust to markers being re-labeled between sessions.
+//
+// Steps 1 (identifyLineAndOffset, exposed below) is the same "4 collinear +
+// 1 offset" geometry as the T-bar reference tracker, which reuses it (see
+// js/ui/motiveCapture.js's T-bar capture) to find its own line-center and
+// offset marker -- it just doesn't extend past an endpoint the way the wand
+// tip does.
 window.App = window.App || {};
 
 App.wandTip = (function () {
@@ -89,6 +95,10 @@ App.wandTip = (function () {
   }
 
   return {
+    // markers5: [{x,y,z}, ...] x5, any order. Returns { lineMarkers (4 pts),
+    // orientationMarker (the 5th/offset pt), residual }.
+    identifyLineAndOffset: identifyLineAndOrientationMarker,
+
     // markers5: [{x,y,z}, ...] x5, any consistent unit (mm as exported),
     // any order. calibration: { tipExtensionMm }. Returns the tip position
     // in the same space/units as the input.
