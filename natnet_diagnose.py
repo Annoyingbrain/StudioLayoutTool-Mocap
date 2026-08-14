@@ -13,7 +13,7 @@
 # Run on the machine where Motive is (or that can reach it):
 #   python natnet_diagnose.py                      (loopback, multicast -- Motive's default)
 #   python natnet_diagnose.py --use-multicast false
-#   python natnet_diagnose.py --server-address 172.16.16.211 --local-address 172.16.16.211
+#   python natnet_diagnose.py --server-address <motive-pc-ip> --local-address <this-pc-ip>
 import argparse
 import logging
 import socket
