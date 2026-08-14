@@ -109,18 +109,15 @@ App.reportExport = (function () {
     return canvas.toDataURL('image/png');
   }
 
-  function buildPropsCaptureRows(scene) {
-    let rows = '';
-    scene.props.forEach(p => {
-      App.propPointsFor(p).forEach(({ key, label }) => {
-        const mp = p.measuredPoints[key];
-        const cell = mp && mp.world
-          ? `X=${mp.world.x.toFixed(3)}, Y=${mp.world.y.toFixed(3)} (±${mp.jitterMm.toFixed(2)}mm)`
-          : '—';
-        rows += `<tr><td>${p.name}</td><td>${label}</td><td>${cell}</td></tr>`;
-      });
-    });
-    return rows;
+  // One row per prop: its solved position, however it got there (manual
+  // placement or live tracking).
+  function buildPropsRows(scene) {
+    return scene.props.map(p =>
+      `<tr><td>${p.name}</td>` +
+      `<td>X=${p.x.toFixed(3)}, Y=${p.y.toFixed(3)}</td>` +
+      `<td>${p.rotationDeg.toFixed(1)}&deg;</td>` +
+      `<td>${p.positionSource === 'measured' ? 'tracked' : 'manual'}</td></tr>`
+    ).join('');
   }
 
   return {
@@ -134,7 +131,7 @@ App.reportExport = (function () {
       const snapshot = buildLayoutSnapshot(setup, scene);
       const now = new Date();
 
-      const propsRows = buildPropsCaptureRows(scene);
+      const propsRows = buildPropsRows(scene);
 
       const images = [];
       images.push(`<figure class="report-img-layout"><img src="${snapshot}"><figcaption>Top-down layout &mdash; wall, props</figcaption></figure>`);
@@ -155,9 +152,9 @@ App.reportExport = (function () {
           <h2>Layout</h2>
           <div class="report-images">${images.join('')}</div>
 
-          <h2>Props &mdash; Captured Points</h2>
+          <h2>Props</h2>
           <table>
-            <thead><tr><th>Prop</th><th>Point</th><th>Captured world position</th></tr></thead>
+            <thead><tr><th>Prop</th><th>Position</th><th>Rotation</th><th>Source</th></tr></thead>
             <tbody>${propsRows}</tbody>
           </table>
         </div>`;

@@ -93,11 +93,11 @@ window.App = window.App || {};
     dom.qs('#insp-rot-field').classList.toggle('hidden', isCircle);
 
     const src = dom.qs('#insp-position-source');
-    if (prop.positionSource === 'measured' && prop.lastSolve) {
-      const s = prop.lastSolve;
-      src.textContent = s.pointCount === 1
-        ? `Position from measurement (1 point, rotation kept as-is)`
-        : `Position + rotation from measurement (${s.pointCount} points, fit residual ${s.fitRms.toFixed(3)} m)`;
+    const drivenBy = setLiveDrivenState(['#insp-x', '#insp-y', '#insp-rot'], 'prop', prop.id);
+    if (drivenBy) {
+      src.textContent = `Position + rotation driven live by "${drivenBy}" — unassign it in Live Tracking to edit by hand.`;
+    } else if (prop.positionSource === 'measured') {
+      src.textContent = 'Position last set by live tracking';
     } else {
       src.textContent = 'Position set manually on canvas';
     }
@@ -204,14 +204,30 @@ window.App = window.App || {};
     setVal('#cam-insp-notes', camera.notes);
 
     const src = dom.qs('#cam-insp-position-source');
-    if (camera.positionSource === 'measured' && camera.lastSolve) {
-      const s = camera.lastSolve;
-      src.textContent = s.pointCount === 1
-        ? `Position from measurement (1 marker, rotation kept as-is)`
-        : `Position + rotation from measurement (${s.pointCount} markers, fit residual ${s.fitRms.toFixed(3)} m)`;
+    const drivenBy = setLiveDrivenState(['#cam-insp-x', '#cam-insp-y', '#cam-insp-rot'], 'camera', camera.id);
+    if (drivenBy) {
+      src.textContent = `Position + rotation driven live by "${drivenBy}" — unassign it in Live Tracking to edit by hand.`;
+    } else if (camera.positionSource === 'measured') {
+      src.textContent = 'Position last set by live tracking';
     } else {
       src.textContent = 'Position set manually on canvas';
     }
+  }
+
+  // While a prop/camera is assigned to a live rigid body, tracking owns its
+  // x/y/rotation -- anything typed into those fields is overwritten by the
+  // next frame ~30 times a second, so the edit silently doesn't take and the
+  // input is left showing a value the Store never had. Disabling them says
+  // so honestly instead. Name/colour/notes stay editable: tracking doesn't
+  // touch those. Returns the driving rigid body's name, or null.
+  function setLiveDrivenState(selectors, entityType, entityId) {
+    const drivenBy = App.liveTracking ? App.liveTracking.getRigidBodyDriving(entityType, entityId) : null;
+    selectors.forEach(sel => {
+      const el = dom.qs(sel);
+      el.disabled = !!drivenBy;
+      el.title = drivenBy ? `Driven live by "${drivenBy}"` : '';
+    });
+    return drivenBy;
   }
 
   function bindCameraInspector() {
@@ -243,10 +259,15 @@ window.App = window.App || {};
     init() {
       bindInspector();
       bindCameraInspector();
-      App.Store.subscribe(() => {
+      const renderAll = () => {
         renderPropList(); renderPropPicker(); renderInspector();
         renderCameraList(); renderCameraInspector();
-      });
+      };
+      App.Store.subscribe(renderAll);
+      // Assignment changes don't touch the Store, so without this the
+      // inspectors keep whatever live-driven lock state they last rendered
+      // -- unassigning would leave x/y/rotation disabled indefinitely.
+      App.liveTracking.subscribe(renderAll);
       renderPropList(); renderPropPicker(); renderInspector();
       renderCameraList(); renderCameraInspector();
     }

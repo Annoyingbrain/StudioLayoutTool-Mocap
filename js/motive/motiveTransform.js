@@ -16,7 +16,7 @@
 // axisMap/sign (which Motive axis feeds which app floor-plane axis, and its
 // direction) come from T-bar's known-orientation marker line. rotationDeg +
 // translate come from a proper 2D rigid fit (rotation + translation together,
-// the same Procrustes math js/rigidFit.js uses for prop positioning) using
+// a Procrustes absolute-orientation fit) using
 // T-bar's own two crossbar endpoints (Marker001/Marker003, 50cm apart, known
 // to sit exactly on the studio floor's confirmed-flat edge at x=5.975) as the
 // two correspondence points -- NOT a simple translation-only origin. A
@@ -31,7 +31,7 @@
 window.App = window.App || {};
 
 App.motiveTransform = {
-  scaleToMeters: 0.001, // Motive export is in millimeters (js/motive/motiveCsv.js asserts this)
+  scaleToMeters: 0.001, // input is millimeters (server.py converts NatNet's units via --units-to-mm)
   axisMap: { appX: 'x', appY: 'z' }, // which Motive axis feeds which app floor-plane axis (Motive Y = up, unused here)
   sign: { appX: 1, appY: -1 },
   rotationDeg: -0.4867, // small correction between Motive's calibration and the mesh-derived floor plan

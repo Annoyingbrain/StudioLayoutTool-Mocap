@@ -206,6 +206,8 @@ window.App = window.App || {};
     if (selected) {
       ctx.save();
       if (!isCircle) {
+        // Corner squares mark the prop's extent; they used to be clickable
+        // to choose a capture point, which live tracking made redundant.
         corners.forEach(c => {
           ctx.fillStyle = '#4da6ff';
           ctx.strokeStyle = '#0d0f12';
@@ -222,22 +224,10 @@ window.App = window.App || {};
         ctx.strokeStyle = '#0d0f12'; ctx.stroke();
       }
       ctx.restore();
-
-      if (App.motiveCapture) {
-        const pointKey = App.motiveCapture.getSelectedPointKey();
-        const worldPt = geo.pointWorldPosition(prop, pointKey);
-        const s = geo.worldToScreen(view, worldPt.x, worldPt.y);
-        ctx.save();
-        ctx.strokeStyle = '#ff5ac8';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(s.x, s.y, 9, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.arc(s.x, s.y, 2, 0, Math.PI * 2); ctx.fillStyle = '#ff5ac8'; ctx.fill();
-        ctx.restore();
-      }
     }
   }
 
-  // A dolly-move recording sampled into a path (js/ui/cameraCapture.js's
+  // A recorded camera move sampled into a path (js/motive/liveRecording.js's
   // handleTrackCsvFile) -- purely a position trail, drawn behind the camera
   // icon itself.
   function drawCameraTrail(view, camera) {
@@ -299,7 +289,7 @@ window.App = window.App || {};
     return { center, pts };
   }
 
-  // A camera icon at a trail's start/end (js/ui/cameraCapture.js's
+  // A camera icon at a trail's start/end (js/motive/liveRecording.js's
   // handleTrackCsvFile) -- smaller and semi-transparent so it reads as a
   // snapshot along the path, not the camera's actual current position.
   function drawCameraTrailEndpoint(view, pos, color, label) {
@@ -314,12 +304,11 @@ window.App = window.App || {};
     ctx.restore();
   }
 
-  // Cameras are their own category from props: tracked via 3 fixed rig
-  // markers (back/left/right) instead of a resizable rect's corners -- see
-  // App.cameraLocalMarkers in js/state.js. Hit-testing and js/floorPngExport.js
-  // still use the simple forward-pointing wedge (App.geometry.
-  // cameraShapeWorldPoints/CAMERA_SHAPE_LOCAL) -- only the on-canvas visual
-  // here uses the camera.png icon.
+  // Cameras are their own category from props, positioned as a whole rather
+  // than by resizable corners. Hit-testing and js/floorPngExport.js use the
+  // simple forward-pointing wedge (App.geometry.cameraShapeWorldPoints/
+  // CAMERA_SHAPE_LOCAL) -- only the on-canvas visual here uses the
+  // camera.png icon.
   function drawCamera(view, camera, selected) {
     const { center, pts } = drawCameraIconShape(view, camera, camera.color, selected);
 
@@ -356,18 +345,6 @@ window.App = window.App || {};
       ctx.beginPath(); ctx.arc(rotHandle.x, rotHandle.y, ROT_HANDLE_R, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#0d0f12'; ctx.stroke();
       ctx.restore();
-
-      if (App.cameraCapture) {
-        const markerKey = App.cameraCapture.getSelectedMarkerKey();
-        const worldPt = geo.cameraMarkerWorldPosition(camera, markerKey);
-        const s = geo.worldToScreen(view, worldPt.x, worldPt.y);
-        ctx.save();
-        ctx.strokeStyle = '#ff5ac8';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(s.x, s.y, 9, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.arc(s.x, s.y, 2, 0, Math.PI * 2); ctx.fillStyle = '#ff5ac8'; ctx.fill();
-        ctx.restore();
-      }
     }
   }
 
@@ -413,7 +390,7 @@ window.App = window.App || {};
       const selected = App.Store.getSelectedProp();
       hint.textContent = selected && selected.shape === 'circle'
         ? 'Drag to move · wheel to zoom · middle-drag or space+drag to pan'
-        : 'Drag to move · click a corner to select it for measuring · top handle rotates · wheel to zoom · middle-drag or space+drag to pan';
+        : 'Drag to move · top handle rotates · wheel to zoom · middle-drag or space+drag to pan';
     }
   }
 
@@ -449,12 +426,6 @@ window.App = window.App || {};
     // Fingertips are much less precise than a mouse cursor, so touch/pen
     // contacts get a wider hit-test tolerance around each handle.
     const pad = pointerType === 'touch' || pointerType === 'pen' ? 16 : 3;
-    const corners = geo.propCorners(prop).map(p => geo.worldToScreen(view, p.x, p.y));
-    for (let i = 0; i < corners.length; i++) {
-      if (geo.distance(screenPt.x, screenPt.y, corners[i].x, corners[i].y) <= HANDLE_R + pad) {
-        return { kind: 'select-point', cornerIndex: i };
-      }
-    }
     const rotWorld = geo.rotationHandlePos(prop);
     const rotScreen = geo.worldToScreen(view, rotWorld.x, rotWorld.y);
     if (geo.distance(screenPt.x, screenPt.y, rotScreen.x, rotScreen.y) <= ROT_HANDLE_R + pad) {
@@ -520,10 +491,6 @@ window.App = window.App || {};
         dragState = { kind: 'rotate', entity: 'prop', entityId: selectedProp.id, center: { x: selectedProp.x, y: selectedProp.y } };
         return;
       }
-      if (handle && handle.kind === 'select-point') {
-        if (App.motiveCapture) App.motiveCapture.selectPoint('corner' + handle.cornerIndex);
-        return;
-      }
     }
     const selectedCamera = App.Store.getSelectedCamera();
     if (selectedCamera) {
@@ -561,6 +528,10 @@ window.App = window.App || {};
 
   function round3(v) { return Math.round(v * 1000) / 1000; }
 
+  function isLiveDriven(entityType, entityId) {
+    return !!(App.liveTracking && App.liveTracking.getRigidBodyDriving(entityType, entityId));
+  }
+
   function onPointerMove(evt) {
     if (evt.pointerType !== 'mouse' && activePointers.has(evt.pointerId)) {
       const { screen } = mouseWorld(evt);
@@ -593,6 +564,11 @@ window.App = window.App || {};
       App.Store.setView({ originX: dragState.startOrigin.x + dx, originY: dragState.startOrigin.y + dy });
       return;
     }
+
+    // Live tracking owns an assigned entity's position/rotation and rewrites
+    // it ~30 times a second, so dragging one just fights the incoming frames.
+    // Ignore the gesture rather than let it flicker.
+    if (isLiveDriven(dragState.entity, dragState.entityId)) return;
 
     if (dragState.kind === 'move') {
       const dx = world.x - dragState.startWorld.x, dy = world.y - dragState.startWorld.y;

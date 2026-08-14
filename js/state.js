@@ -2,54 +2,6 @@
 // re-render when relevant parts of the setup change, without a framework.
 window.App = window.App || {};
 
-// The 5 points on a rectangular prop that can be individually captured via
-// the Motive wand: its center, and each of its 4 corners (indices match
-// App.geometry.propCorners() / the on-canvas resize handles).
-App.PROP_POINTS = [
-  { key: 'center', label: 'Center' },
-  { key: 'corner0', label: 'Corner 1' },
-  { key: 'corner1', label: 'Corner 2' },
-  { key: 'corner2', label: 'Corner 3' },
-  { key: 'corner3', label: 'Corner 4' }
-];
-
-// Which of App.PROP_POINTS are measurable on a given prop. A circular prop
-// has no corners (it's rotationally symmetric), so it can only ever be
-// measured/positioned from its center point. A triangular prop has only 3
-// corners (corner0..corner2 -- see geometry.localCornerOffsets), so corner3
-// doesn't apply.
-App.propPointsFor = function (prop) {
-  if (prop.shape === 'circle') return App.PROP_POINTS.filter(p => p.key === 'center');
-  if (prop.shape === 'triangle') return App.PROP_POINTS.filter(p => p.key !== 'corner3');
-  return App.PROP_POINTS;
-};
-
-// Cameras are a separate category from props: tracked via 3 markers on the
-// camera body (back + left + right) rather than a resizable rect's 5 points.
-App.CAMERA_POINTS = [
-  { key: 'back', label: 'Back' },
-  { key: 'left', label: 'Left' },
-  { key: 'right', label: 'Right' }
-];
-
-// Camera marker rig geometry (measured 2026-08-14, Reference trackers/
-// Camera.csv): Motive's Marker001=back, Marker002=right, Marker003=left.
-// Local frame: origin at the left/right midpoint (= the camera's x/y),
-// +Y = forward (lens direction, away from the back marker), +X = camera's
-// right -- matching the "local +Y = front" convention js/canvas.js's
-// direction arrow already uses for rect props.
-(function () {
-  const distBackRight = 0.23, distRightLeft = 0.12, distBackLeft = 0.26;
-  const w = distRightLeft;
-  const bx = (distBackLeft ** 2 - distBackRight ** 2) / (2 * w);
-  const by = -Math.sqrt(Math.max(0, distBackRight ** 2 - (bx - w / 2) ** 2));
-  App.cameraLocalMarkers = {
-    right: { x: w / 2, y: 0 },
-    left: { x: -w / 2, y: 0 },
-    back: { x: bx, y: by }
-  };
-})();
-
 App.factories = {
   PROP_COLORS: ['#4da6ff', '#7fd08c', '#e0b95a', '#c98bdb', '#ff8a65', '#5ac8fa'],
 
@@ -65,9 +17,7 @@ App.factories = {
       rotationDeg: 0,
       color: App.factories.PROP_COLORS[(colorIndex || 0) % App.factories.PROP_COLORS.length],
       notes: '',
-      positionSource: 'manual', // 'manual' | 'measured'
-      measuredPoints: { center: null, corner0: null, corner1: null, corner2: null, corner3: null },
-      lastSolve: null // { rotationDeg, pointCount, fitRms } from the last successful solve
+      positionSource: 'manual' // 'manual' | 'measured' (measured = driven by live tracking)
     };
   },
 
@@ -79,16 +29,14 @@ App.factories = {
       rotationDeg: 0,
       color: App.factories.PROP_COLORS[(colorIndex || 0) % App.factories.PROP_COLORS.length],
       notes: '',
-      positionSource: 'manual', // 'manual' | 'measured'
-      measuredMarkers: { back: null, left: null, right: null },
-      lastSolve: null,
-      // Sampled path (app-world {x,y} points) from a dolly-move Motive
-      // recording (js/ui/cameraCapture.js) -- purely a visual trail, not an
-      // editable/solved entity. null until a track CSV is loaded.
+      positionSource: 'manual', // 'manual' | 'measured' (measured = driven by live tracking)
+      // Sampled path (app-world {x,y} points) of a recorded camera move
+      // (js/motive/liveRecording.js) -- purely a visual trail, not an
+      // editable entity. null until a move is recorded.
       trail: null,
       // Position + rotation at the trail's start/end (each { x, y,
       // rotationDeg }), for drawing oriented camera icons at both ends.
-      // null until a track CSV is loaded.
+      // null until a move is recorded.
       trailEndpoints: null
     };
   },
@@ -179,8 +127,8 @@ App.Store = (function () {
     },
 
     getSelectedPropId() { return selectedPropId; },
-    // Selecting a prop/camera clears the other -- one Inspector panel, one
-    // Motive Capture panel, always showing at most one selected item.
+    // Selecting a prop/camera clears the other -- one Inspector panel,
+    // always showing at most one selected item.
     selectProp(id) { selectedPropId = id; if (id) selectedCameraId = null; emit(); },
     getSelectedProp() { return currentScene().props.find(p => p.id === selectedPropId) || null; },
 
@@ -223,85 +171,6 @@ App.Store = (function () {
     },
 
     setFrameGrab(fg) { currentScene().frameGrab = fg; this.touch(); },
-    setView(patch) { Object.assign(currentScene().view, patch); emit(); },
-
-    // patch: { world: {x,y}, jitterMm, frameCount, sourceFile, capturedAt }
-    // (js/ui/motiveCapture.js) -- a Motive capture already IS the solved
-    // world point, no separate distances/solve step like the old DISTO flow.
-    updateMeasuredPoint(propId, pointKey, patch) {
-      const p = currentScene().props.find(p => p.id === propId);
-      if (!p) return;
-      p.measuredPoints[pointKey] = Object.assign({}, p.measuredPoints[pointKey], patch);
-      this.touch();
-    },
-    clearMeasuredPoint(propId, pointKey) {
-      const p = currentScene().props.find(p => p.id === propId);
-      if (!p) return;
-      p.measuredPoints[pointKey] = null;
-      this.touch();
-    },
-
-    updateMeasuredCameraMarker(cameraId, markerKey, patch) {
-      const c = currentScene().cameras.find(c => c.id === cameraId);
-      if (!c) return;
-      c.measuredMarkers[markerKey] = Object.assign({}, c.measuredMarkers[markerKey], patch);
-      this.touch();
-    },
-    clearMeasuredCameraMarker(cameraId, markerKey) {
-      const c = currentScene().cameras.find(c => c.id === cameraId);
-      if (!c) return;
-      c.measuredMarkers[markerKey] = null;
-      this.touch();
-    },
-
-    // Recomputes the prop's x/y/rotationDeg from whichever of its 5 points have a
-    // captured (Motive-derived) world position. 1 captured point -> translate only
-    // (keeps current rotation). 2+ -> least-squares rotation + translation fit.
-    solvePropTransform(propId) {
-      const p = currentScene().props.find(p => p.id === propId);
-      if (!p) return null;
-      const correspondences = [];
-      App.propPointsFor(p).forEach(({ key }) => {
-        const mp = p.measuredPoints[key];
-        if (mp && mp.world) {
-          correspondences.push({ local: App.geometry.pointLocalOffset(p, key), world: { x: mp.world.x, y: mp.world.y } });
-        }
-      });
-      const result = App.rigidFit.solve(correspondences, p.rotationDeg);
-      if (!result) return null;
-      p.x = Math.round(result.x * 1000) / 1000;
-      p.y = Math.round(result.y * 1000) / 1000;
-      p.rotationDeg = Math.round(result.rotationDeg * 10) / 10;
-      p.positionSource = 'measured';
-      p.lastSolve = result;
-      this.touch();
-      return result;
-    },
-
-    // Same idea as solvePropTransform: each of the camera's 3 markers has a
-    // known fixed local offset (App.cameraLocalMarkers, from the physical
-    // rig's measured marker spacing). 1 captured marker only translates
-    // (rotation kept as-is); 2-3 solve rotation + translation via the same
-    // least-squares Procrustes fit (js/rigidFit.js).
-    solveCameraTransform(cameraId) {
-      const c = currentScene().cameras.find(c => c.id === cameraId);
-      if (!c) return null;
-      const correspondences = [];
-      App.CAMERA_POINTS.forEach(({ key }) => {
-        const mp = c.measuredMarkers[key];
-        if (mp && mp.world) {
-          correspondences.push({ local: App.cameraLocalMarkers[key], world: { x: mp.world.x, y: mp.world.y } });
-        }
-      });
-      const result = App.rigidFit.solve(correspondences, c.rotationDeg);
-      if (!result) return null;
-      c.x = Math.round(result.x * 1000) / 1000;
-      c.y = Math.round(result.y * 1000) / 1000;
-      c.rotationDeg = Math.round(result.rotationDeg * 10) / 10;
-      c.positionSource = 'measured';
-      c.lastSolve = result;
-      this.touch();
-      return result;
-    }
+    setView(patch) { Object.assign(currentScene().view, patch); emit(); }
   };
 })();

@@ -7,22 +7,18 @@
 // studio layout, and won't mean anything on a different machine or a setup
 // reloaded later.
 //
-// Position: converted through the same App.motiveTransform.toAppWorld used
-// by the CSV capture flows (js/ui/motiveCapture.js, js/ui/cameraCapture.js)
-// -- this is the already-calibrated mm-to-app-meters pipeline, just called
-// per live frame instead of once per averaged CSV capture.
+// Position: converted through App.motiveTransform.toAppWorld -- the
+// mm-to-app-meters pipeline calibrated against the studio floor plan.
 //
 // Rotation: Motive solves each rigid body's own orientation quaternion
 // on-device, using whichever local axes were set when the rigid body asset
-// was created in Motive -- unlike the CSV flows, which derive orientation
-// from known physical marker geometry (T-bar's offset marker, the camera
-// rig's back/left/right spacing) instead of trusting that solve. This
-// module assumes local +Y is "forward" (matching every other local-frame
-// convention in this app -- js/state.js's cameraLocalMarkers, prop corner
-// offsets) and rotates that axis by the incoming quaternion, but whether
-// that assumption holds for a given Motive asset is unverified without
-// live hardware -- App.motiveCalibration.liveRotationOffsetDeg exists to
-// correct for it once you can check against a known real heading.
+// was created in Motive. This module assumes local +Y is "forward"
+// (matching the local-frame convention used elsewhere in this app, e.g.
+// prop corner offsets) and rotates that axis by the incoming quaternion,
+// but whether that assumption holds for a given Motive asset can only be
+// checked against real hardware -- App.motiveCalibration.
+// liveRotationOffsetDeg exists to correct for it once you can compare
+// against a known real heading.
 window.App = window.App || {};
 
 (function () {
@@ -55,8 +51,7 @@ window.App = window.App || {};
     };
   }
 
-  // Same atan2 convention js/ui/motiveCapture.js's T-bar path uses to turn
-  // an app-world direction into a rotationDeg matching js/canvas.js's
+  // Turns an app-world direction into a rotationDeg matching js/canvas.js's
   // "local +Y = front" drawing convention.
   function directionToRotationDeg(dirApp) {
     return Math.atan2(-dirApp.x, dirApp.y) * 180 / Math.PI;
@@ -82,6 +77,18 @@ window.App = window.App || {};
 
     getAssignments() { return assignments; },
     getAssignmentFor(rigidBodyName) { return assignments[rigidBodyName] || null; },
+
+    // The reverse lookup: which rigid body (if any) is currently driving
+    // this prop/camera. Returns its name, or null. Used by the inspectors to
+    // show -- and lock -- fields that live tracking owns, since anything
+    // typed into them would just be overwritten by the next frame.
+    getRigidBodyDriving(entityType, entityId) {
+      const name = Object.keys(assignments).find(n => {
+        const a = assignments[n];
+        return a.entityType === entityType && a.entityId === entityId;
+      });
+      return name || null;
+    },
     assign(rigidBodyName, entityType, entityId) {
       assignments[rigidBodyName] = { entityType, entityId };
       emit();

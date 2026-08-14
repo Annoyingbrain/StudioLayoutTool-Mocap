@@ -162,34 +162,6 @@
         </div>
       </section>
 
-      <section class="panel" id="motive-panel">
-        <h3>Motive Capture</h3>
-        <div id="motive-empty" class="muted small">Select a prop to capture points from Motive.</div>
-        <div id="motive-fields" class="hidden">
-          <div class="tool-row">
-            <span>Wand tip extension (mm)</span>
-            <input type="number" id="tip-extension-input" step="0.1" min="0" style="width: 5em;">
-          </div>
-          <p class="hint">Distance from the marker line's tip-end to the wand's actual touch tip, measured once with a ruler. Captured positions aren't trustworthy until this is set correctly -- see js/motive/motiveCalibration.js.</p>
-          <div id="point-selector" class="tool-row"></div>
-          <label class="file-btn block">Load Motive CSV for this point<input id="motive-csv-input" type="file" accept=".csv"></label>
-          <div id="motive-capture-result" class="small"></div>
-          <div id="points-status"></div>
-          <button id="btn-solve-object" disabled>Solve Object Position &amp; Rotation</button>
-          <p class="hint">Capture at least 2 points (e.g. two corners, or a corner + center) to solve both position and rotation. A single point can only reposition the prop — its current rotation is kept.</p>
-
-          <div class="subheading">Reference tracker (position + height)</div>
-          <p class="hint">Instead of touching a point with the wand: place a 3-marker reference tracker (e.g. the Triangle probe) flat on top of the prop and load its CSV here. Sets X/Y from its centroid and Height from Motive's Y (up-axis) reading — rotation is left as-is.</p>
-          <label class="file-btn block">Load reference tracker CSV<input id="ref-tracker-csv-input" type="file" accept=".csv"></label>
-          <div id="ref-tracker-result" class="small"></div>
-
-          <div class="subheading">T-bar (rectangular prop position + rotation)</div>
-          <p class="hint">For rectangular props: place the T-bar reference tracker (5 markers) on the prop and load its CSV here. Sets X/Y from the T-bar's line-center and Rotation from its 5th (offset) marker's direction — that marker should point the way the prop faces.</p>
-          <label class="file-btn block">Load T-bar CSV<input id="tbar-csv-input" type="file" accept=".csv"></label>
-          <div id="tbar-result" class="small"></div>
-        </div>
-      </section>
-
       <section class="panel" id="camera-inspector-panel">
         <h3>Camera Inspector</h3>
         <div id="camera-inspector-empty" class="muted small">Select a camera to edit its properties.</div>
@@ -207,21 +179,6 @@
         </div>
       </section>
 
-      <section class="panel" id="camera-motive-panel">
-        <h3>Camera Motive Capture</h3>
-        <div id="camera-motive-empty" class="muted small">Select a camera to capture its position from Motive.</div>
-        <div id="camera-motive-fields" class="hidden">
-          <p class="hint">The camera's 3 rig markers (back/left/right) are one rigid body -- load a single Motive CSV capture of the camera at this position and all 3 are captured and solved together.</p>
-          <label class="file-btn block">Load Motive CSV for this camera<input id="camera-motive-csv-input" type="file" accept=".csv"></label>
-          <div id="camera-capture-result" class="small"></div>
-          <div id="camera-markers-status"></div>
-
-          <div class="subheading">Dolly move (trail)</div>
-          <p class="hint">Load a full dolly-move recording (thousands of frames) to draw the camera's path on the floor plan. A visualization only -- not solved/editable like the position above.</p>
-          <label class="file-btn block">Load dolly track CSV<input id="camera-track-csv-input" type="file" accept=".csv"></label>
-        </div>
-      </section>
-
     </aside>
   </div>
 </div>
@@ -231,9 +188,6 @@
 <script src="js/utils/dom.js"></script>
 <script src="js/utils/id.js"></script>
 <script src="js/utils/geometry.js"></script>
-<script src="js/rigidFit.js"></script>
-<script src="js/motive/motiveCsv.js"></script>
-<script src="js/motive/wandTip.js"></script>
 <script src="js/motive/motiveTransform.js"></script>
 <script src="js/motive/motiveCalibration.js"></script>
 <script src="js/motive/liveTracking.js"></script>
@@ -246,8 +200,6 @@
 <script src="js/floorPngExport.js"></script>
 <script src="js/reportExport.js"></script>
 <script src="js/ui/sidebar.js"></script>
-<script src="js/ui/motiveCapture.js"></script>
-<script src="js/ui/cameraCapture.js"></script>
 <script src="js/ui/liveTrackingUi.js"></script>
 <script src="js/ui/githubSync.js"></script>
 <script src="js/ui/toolbar.js"></script>

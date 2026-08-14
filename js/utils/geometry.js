@@ -71,20 +71,6 @@ App.geometry = {
       this.rotatePoint(prop.x + p.x, prop.y + p.y, prop.x, prop.y, prop.rotationDeg));
   },
 
-  // Local (unrotated, center-relative) offset for a named measurement point: 'center' or 'corner0'..'corner3'.
-  pointLocalOffset(prop, pointKey) {
-    if (pointKey === 'center') return { x: 0, y: 0 };
-    const idx = parseInt(pointKey.replace('corner', ''), 10);
-    return this.localCornerOffsets(prop)[idx];
-  },
-
-  // Current world-space position of a named measurement point given the prop's present x/y/rotation.
-  pointWorldPosition(prop, pointKey) {
-    if (pointKey === 'center') return { x: prop.x, y: prop.y };
-    const idx = parseInt(pointKey.replace('corner', ''), 10);
-    return this.propCorners(prop)[idx];
-  },
-
   // Radius of a circular prop (widthM doubles as its diameter).
   propRadius(prop) {
     return prop.widthM / 2;
@@ -138,12 +124,6 @@ App.geometry = {
   },
 
   // World-space position of one of a camera's 3 tracked markers
-  // ('back'/'left'/'right'), from its fixed local rig geometry
-  // (App.cameraLocalMarkers) rotated/translated by the camera's current x/y/rotationDeg.
-  cameraMarkerWorldPosition(camera, markerKey) {
-    const local = App.cameraLocalMarkers[markerKey];
-    return this.rotatePoint(camera.x + local.x, camera.y + local.y, camera.x, camera.y, camera.rotationDeg);
-  },
 
   // World-space position of a camera's rotation handle -- same "local +Y,
   // fixed distance past the shape" convention as rotationHandlePos.
