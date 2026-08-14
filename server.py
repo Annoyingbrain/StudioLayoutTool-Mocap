@@ -29,7 +29,6 @@ import time
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
-import websockets
 from websockets.sync.server import serve as ws_serve
 
 # The package's __init__.py doesn't re-export anything, so these come
@@ -43,6 +42,26 @@ ROOT = Path(__file__).resolve().parent
 # a rigid body created/renamed in Motive after the bridge started still gets
 # picked up. Cheap request, no need to do it every frame.
 DESCRIPTIONS_REFRESH_SEC = 5.0
+
+
+def broadcast(ws_server, message):
+    """Send to every connected browser.
+
+    Deliberately NOT websockets.broadcast(): that helper only handles the
+    asyncio API's connections. Handed the threading API's ServerConnection
+    objects (what websockets.sync.server.serve produces) it silently skips
+    every one -- logging "skipped broadcast: sending a fragmented message"
+    at debug level and returning normally, so frames vanish with no error
+    anywhere. Sending per-connection is the supported way for the sync API.
+    """
+    # Snapshot: the set mutates as browsers connect/disconnect, and a client
+    # dropping mid-send is normal, not an error worth interrupting the
+    # stream for.
+    for connection in list(ws_server.connections):
+        try:
+            connection.send(message)
+        except Exception:
+            pass
 
 
 def natnet_loop(client, ws_server, stop_event, units_to_mm):
@@ -93,7 +112,7 @@ def natnet_loop(client, ws_server, stop_event, units_to_mm):
             "frameNumber": mocap.prefix_data.frame_number,
             "rigidBodies": rigid_bodies,
         })
-        websockets.broadcast(ws_server.connections, message)
+        broadcast(ws_server, message)
 
 
 # NatNetClient.connect(timeout=...) doesn't reliably bound how long it can
