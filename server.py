@@ -152,7 +152,7 @@ def connect_with_hard_timeout(client, soft_timeout):
     return result.get('connected', False)
 
 
-def connect_and_stream(natnet_params, ws_server, stop_event):
+def connect_and_stream(natnet_params, ws_server, stop_event, units_to_mm):
     print(
         f"[natnet] attempting to connect to Motive at {natnet_params.server_address}:"
         f"{natnet_params.command_port} (multicast={natnet_params.use_multicast}, "
@@ -170,12 +170,6 @@ def connect_and_stream(natnet_params, ws_server, stop_event):
             file=sys.stderr,
         )
         return
-
-    units_to_mm = 1000.0  # NatNet's documented wire default is meters
-    try:
-        units_to_mm = client.UnitesToMillimeters()
-    except Exception as e:
-        print(f"[natnet] couldn't query UnitesToMillimeters, assuming meters (1000): {e}", file=sys.stderr)
 
     print(f"Connected to Motive at {natnet_params.server_address} (units_to_mm={units_to_mm})")
     try:
@@ -207,6 +201,19 @@ def main():
     parser.add_argument("--host", default="0.0.0.0", help="Bind address for both servers (default: %(default)s)")
     parser.add_argument("--http-port", type=int, default=8000, help="Static file server port (default: %(default)s)")
     parser.add_argument("--ws-port", type=int, default=8001, help="Live tracking WebSocket port (default: %(default)s)")
+    # Deliberately a flag rather than client.UnitesToMillimeters(): that
+    # library method sends a misspelled command ("UnitesToMillimeters"; the
+    # real NatNet command is "UnitsToMillimeters"), so Motive answers
+    # UNRECOGNIZED_REQUEST, its `while self._server_response is None:` loop
+    # never exits, and the caller hangs forever with no timeout and no
+    # exception. Confirmed against Motive 3.5.0.1 / NatNet 4.5 -- this was
+    # the cause of the silent hang that made Live mode look dead.
+    parser.add_argument(
+        "--units-to-mm", type=float, default=1000.0,
+        help="Multiplier converting streamed NatNet position units to millimeters, which is what "
+             "js/motive/motiveTransform.js expects (default: %(default)s, i.e. NatNet's standard "
+             "meters). Only change this if Motive is streaming in something other than meters.",
+    )
     NatNetParams.argparse_group(parser)
     args = parser.parse_args()
     # Status/diagnostic lines matter even when output is redirected to a log
@@ -241,7 +248,11 @@ def main():
     stop_event = threading.Event()
     with ws_serve(ws_handler, args.host, args.ws_port) as ws_server:
         print(f"Live bridge WebSocket at ws://localhost:{args.ws_port}/")
-        threading.Thread(target=connect_and_stream, args=(natnet_params, ws_server, stop_event), daemon=True).start()
+        threading.Thread(
+            target=connect_and_stream,
+            args=(natnet_params, ws_server, stop_event, args.units_to_mm),
+            daemon=True,
+        ).start()
         try:
             ws_server.serve_forever()
         except KeyboardInterrupt:

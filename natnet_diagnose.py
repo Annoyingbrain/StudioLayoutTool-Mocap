@@ -26,6 +26,30 @@ from new_natnet_client.Client import NatNetClient, NatNetParams
 CONNECT_TIMEOUT_SEC = 10.0
 
 
+def query_with_timeout(fn, timeout=3.0):
+    """Several of this library's request/response helpers wait on the reply
+    with an unbounded `while self._server_response is None:` spin -- if
+    Motive doesn't answer (or rejects the command), they never return. Run
+    them in a daemon thread so an unanswered query costs `timeout` seconds
+    instead of wedging the script."""
+    out = {}
+
+    def worker():
+        try:
+            out["value"] = fn()
+        except Exception as e:
+            out["error"] = e
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    if t.is_alive():
+        return f"<no reply within {timeout:.0f}s -- Motive didn't answer this query>"
+    if "error" in out:
+        return f"<raised {out['error']!r}>"
+    return out["value"]
+
+
 def check_port(host, port, kind):
     """UDP has no 'is it listening' handshake, so this only reports whether
     the port can be bound -- i.e. whether something else already holds it.
@@ -72,8 +96,16 @@ def main():
     print(f"use_multicast    : {params.use_multicast}   (must match Motive's Transmission Type)")
     print(f"multicast_address: {params.multicast_address}")
     print(f"command/data port: {params.command_port}/{params.data_port}")
-    print("port availability:")
-    print(check_port(params.local_ip_address, params.data_port, "data"))
+    # Only meaningful in multicast mode: there the client binds the data
+    # port itself (so a second client, e.g. Unreal's, can clash). In unicast
+    # the client binds an ephemeral port instead and Motive sends to that,
+    # so "in use" here says nothing about whether unicast will work.
+    if params.use_multicast:
+        print("port availability:")
+        print(check_port(params.local_ip_address, params.data_port, "data"))
+    else:
+        print("port availability: (skipped -- unicast binds an ephemeral port, not "
+              f"{params.data_port}, so that port's state is irrelevant here)")
     print("=" * 70)
     print(f"Calling connect(timeout={CONNECT_TIMEOUT_SEC})... the LAST debug line below is where it got to.")
     print("-" * 70)
@@ -108,12 +140,16 @@ def main():
         print("                                            --local-address above.")
     elif result.get("connected"):
         print(f"RESULT: CONNECTED in {elapsed:.1f}s.")
-        try:
-            print(f"        server info      : {client.server_info}")
-            print(f"        UnitesToMillimeters: {client.UnitesToMillimeters()}")
-            print(f"        FrameRate        : {client.FrameRate()}")
-        except Exception as e:
-            print(f"        (post-connect query failed: {e!r})")
+        print(f"        server info      : {client.server_info}")
+        # NOT calling client.UnitesToMillimeters() -- that library method
+        # sends a misspelled command ("UnitesToMillimeters"; the real NatNet
+        # command is "UnitsToMillimeters"), Motive answers
+        # UNRECOGNIZED_REQUEST, and its `while self._server_response is
+        # None:` loop then spins forever with no timeout and no exception.
+        # That single call was the cause of the silent hang this script was
+        # written to find. FrameRate() has the same unguarded wait, so it's
+        # bounded here rather than trusted.
+        print(f"        FrameRate        : {query_with_timeout(client.FrameRate)}")
         print("\n        Reading 3 seconds of frames...")
         seen = 0
         deadline = time.time() + 3.0
