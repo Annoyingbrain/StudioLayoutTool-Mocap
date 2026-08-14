@@ -161,6 +161,8 @@ App.Store = (function () {
       scene.cameras = scene.cameras.filter(c => c.id !== id);
       if (selectedCameraId === id) selectedCameraId = null;
       if (App.liveTracking) App.liveTracking.unassignEntity('camera', id);
+      // A recording in progress has nowhere to be written now.
+      if (App.liveRecording && App.liveRecording.getCameraId() === id) App.liveRecording.cancel();
       this.touch();
     },
     updateCamera(id, patch) {

@@ -21,6 +21,7 @@ App.toast = function (message, isError) {
 document.addEventListener('DOMContentLoaded', () => {
   App.canvas.init();
   App.sidebar.init();
+  App.liveRecording.init();
   App.liveTrackingUi.init();
   App.githubSync.init();
   App.toolbar.init();

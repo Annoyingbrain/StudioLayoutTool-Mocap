@@ -212,6 +212,8 @@ window.App = window.App || {};
     } else {
       src.textContent = 'Position set manually on canvas';
     }
+
+    renderRecordingControls(camera);
   }
 
   // While a prop/camera is assigned to a live rigid body, tracking owns its
@@ -253,6 +255,56 @@ window.App = window.App || {};
       if (!camera) return;
       if (confirm(`Delete "${camera.name}"?`)) App.Store.removeCamera(camera.id);
     });
+
+    dom.qs('#btn-record-movement').addEventListener('click', () => {
+      const camera = App.Store.getSelectedCamera();
+      if (!camera) return;
+      if (App.liveRecording.isRecording()) {
+        const result = App.liveRecording.stop();
+        App.toast(result
+          ? `Movement recorded (${result.pointCount} points).`
+          : 'Nothing recorded — the camera never moved.', !result);
+      } else {
+        const problem = App.liveRecording.start(camera.id);
+        if (problem) App.toast(problem, true);
+      }
+    });
+
+    dom.qs('#btn-clear-trail').addEventListener('click', () => {
+      const camera = App.Store.getSelectedCamera();
+      if (!camera) return;
+      App.liveRecording.clearTrail(camera.id);
+    });
+  }
+
+  // Recording is per-camera, so the controls describe whichever camera is
+  // selected -- including making clear when a recording is running against a
+  // *different* one, which would otherwise look like the button doing nothing.
+  function renderRecordingControls(camera) {
+    const btn = dom.qs('#btn-record-movement');
+    const clearBtn = dom.qs('#btn-clear-trail');
+    const status = dom.qs('#record-status');
+    const recording = App.liveRecording.isRecording();
+    const recordingThis = recording && App.liveRecording.getCameraId() === camera.id;
+
+    btn.textContent = recordingThis ? '■ Stop Recording' : '● Record Movement';
+    btn.disabled = recording && !recordingThis;
+    clearBtn.disabled = recordingThis || !camera.trail;
+
+    if (recordingThis) {
+      status.textContent = `Recording… ${App.liveRecording.getSampleCount()} points captured.`;
+      status.className = 'small err-warn';
+    } else if (recording) {
+      const other = App.Store.getCameras().find(c => c.id === App.liveRecording.getCameraId());
+      status.textContent = `Recording "${other ? other.name : 'another camera'}" — stop that first.`;
+      status.className = 'small muted';
+    } else if (camera.trail) {
+      status.textContent = `Path recorded: ${camera.trail.length} points.`;
+      status.className = 'small err-ok';
+    } else {
+      status.textContent = 'No path recorded.';
+      status.className = 'small muted';
+    }
   }
 
   App.sidebar = {
@@ -268,6 +320,7 @@ window.App = window.App || {};
       // inspectors keep whatever live-driven lock state they last rendered
       // -- unassigning would leave x/y/rotation disabled indefinitely.
       App.liveTracking.subscribe(renderAll);
+      App.liveRecording.subscribe(renderAll);
       renderPropList(); renderPropPicker(); renderInspector();
       renderCameraList(); renderCameraInspector();
     }

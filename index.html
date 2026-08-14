@@ -175,6 +175,15 @@
           <label>Color <input id="cam-insp-color" type="color" value="#4da6ff"></label>
           <label>Notes <textarea id="cam-insp-notes" rows="2"></textarea></label>
           <div class="position-source small muted" id="cam-insp-position-source"></div>
+
+          <div class="subheading">Movement Recording</div>
+          <p class="hint">Records this camera's live movement as a path on the floor plan, with its start and end position marked. Assign it to a rigid body in Live Tracking first, then press Record and perform the move.</p>
+          <div class="tool-row">
+            <button id="btn-record-movement">● Record Movement</button>
+            <button id="btn-clear-trail">Clear Path</button>
+          </div>
+          <div id="record-status" class="small muted"></div>
+
           <button id="btn-delete-camera" class="danger">Delete Camera</button>
         </div>
       </section>
@@ -191,6 +200,7 @@
 <script src="js/motive/motiveTransform.js"></script>
 <script src="js/motive/motiveCalibration.js"></script>
 <script src="js/motive/liveTracking.js"></script>
+<script src="js/motive/liveRecording.js"></script>
 <script src="js/motive/liveConnection.js"></script>
 <script src="js/studioSketch.js"></script>
 <script src="js/state.js"></script>

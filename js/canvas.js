@@ -227,8 +227,7 @@ window.App = window.App || {};
     }
   }
 
-  // A recorded camera move sampled into a path (js/motive/liveRecording.js's
-  // handleTrackCsvFile) -- purely a position trail, drawn behind the camera
+  // A recorded camera move sampled into a path (js/motive/liveRecording.js) -- purely a position trail, drawn behind the camera
   // icon itself.
   function drawCameraTrail(view, camera) {
     const pts = camera.trail.map(p => geo.worldToScreen(view, p.x, p.y));
@@ -289,8 +288,7 @@ window.App = window.App || {};
     return { center, pts };
   }
 
-  // A camera icon at a trail's start/end (js/motive/liveRecording.js's
-  // handleTrackCsvFile) -- smaller and semi-transparent so it reads as a
+  // A camera icon at a trail's start/end (js/motive/liveRecording.js) -- smaller and semi-transparent so it reads as a
   // snapshot along the path, not the camera's actual current position.
   function drawCameraTrailEndpoint(view, pos, color, label) {
     const { center } = drawCameraIconShape(view, pos, color, false, 0.55);
