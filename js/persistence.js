@@ -64,11 +64,16 @@ App.persistence = {
     localStorage.setItem(LS_INDEX_KEY, JSON.stringify(index));
   },
 
-  // Wand tip calibration (js/motive/motiveCalibration.js) -- a rig setting
-  // (physical wand geometry) rather than per-setup data, so it's kept
-  // separately and carries over between setups until changed.
+  // Wand tip calibration + live rotation offset (js/motive/
+  // motiveCalibration.js) -- rig settings (physical wand geometry, Motive
+  // rigid-body axis convention) rather than per-setup data, so they're kept
+  // separately and carry over between setups until changed. Callers pass a
+  // partial patch (e.g. just { tipExtensionMm } or just
+  // { liveRotationOffsetDeg }) -- merge onto whatever's already stored so
+  // saving one doesn't clobber the other.
   saveMotiveCalibration(calibration) {
-    localStorage.setItem(LS_MOTIVE_CALIBRATION_KEY, JSON.stringify(calibration));
+    const merged = Object.assign({}, this.loadMotiveCalibration(), calibration);
+    localStorage.setItem(LS_MOTIVE_CALIBRATION_KEY, JSON.stringify(merged));
   },
 
   loadMotiveCalibration() {

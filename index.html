@@ -74,6 +74,23 @@
         </div>
       </section>
 
+      <section class="panel" id="live-panel">
+        <h3>Live Tracking</h3>
+        <label>Bridge URL <input id="live-ws-url" type="text" spellcheck="false"></label>
+        <div class="tool-row">
+          <button id="btn-live-connect">Connect</button>
+          <button id="btn-live-disconnect">Disconnect</button>
+        </div>
+        <div id="live-status" class="small muted"></div>
+        <p class="hint">Requires server.py running (see requirements.txt) -- the browser can't reach Motive on its own. Assign each incoming rigid body below to a camera or prop to drive its position/rotation live.</p>
+        <div id="live-rigidbody-list"></div>
+        <div class="tool-row">
+          <span>Live rotation offset (deg)</span>
+          <input type="number" id="live-rotation-offset-input" step="0.1" style="width: 5em;">
+        </div>
+        <p class="hint">Live rotation isn't calibrated by default -- see js/motive/liveTracking.js. Point the tracked object at a known heading and adjust this until the displayed rotation matches reality.</p>
+      </section>
+
       <section class="panel" id="framegrab-panel">
         <h3>Frame Grab Reference</h3>
         <label class="file-btn block">Import frame grab<input id="import-framegrab" type="file" accept="image/*"></label>
@@ -219,6 +236,8 @@
 <script src="js/motive/wandTip.js"></script>
 <script src="js/motive/motiveTransform.js"></script>
 <script src="js/motive/motiveCalibration.js"></script>
+<script src="js/motive/liveTracking.js"></script>
+<script src="js/motive/liveConnection.js"></script>
 <script src="js/studioSketch.js"></script>
 <script src="js/state.js"></script>
 <script src="js/persistence.js"></script>
@@ -229,6 +248,7 @@
 <script src="js/ui/sidebar.js"></script>
 <script src="js/ui/motiveCapture.js"></script>
 <script src="js/ui/cameraCapture.js"></script>
+<script src="js/ui/liveTrackingUi.js"></script>
 <script src="js/ui/githubSync.js"></script>
 <script src="js/ui/toolbar.js"></script>
 <script src="js/main.js"></script>

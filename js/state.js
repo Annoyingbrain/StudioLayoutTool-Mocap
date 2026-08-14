@@ -196,6 +196,7 @@ App.Store = (function () {
       const scene = currentScene();
       scene.props = scene.props.filter(p => p.id !== id);
       if (selectedPropId === id) selectedPropId = null;
+      if (App.liveTracking) App.liveTracking.unassignEntity('prop', id);
       this.touch();
     },
     updateProp(id, patch) {
@@ -211,6 +212,7 @@ App.Store = (function () {
       const scene = currentScene();
       scene.cameras = scene.cameras.filter(c => c.id !== id);
       if (selectedCameraId === id) selectedCameraId = null;
+      if (App.liveTracking) App.liveTracking.unassignEntity('camera', id);
       this.touch();
     },
     updateCamera(id, patch) {

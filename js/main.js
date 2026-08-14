@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
   App.sidebar.init();
   App.motiveCapture.init();
   App.cameraCapture.init();
+  App.liveTrackingUi.init();
   App.githubSync.init();
   App.toolbar.init();
   App.canvas.fitToStudioSketch();
