@@ -5,16 +5,23 @@ window.App = window.App || {};
 (function () {
   const dom = App.dom;
 
-  function refreshSetupPicker() {
+  async function refreshSetupPicker() {
     const picker = dom.qs('#setup-picker');
     const current = picker.value;
+    let entries;
+    try {
+      entries = await App.persistence.listLocal();
+    } catch (err) {
+      dom.clear(picker);
+      picker.appendChild(dom.el('option', { value: '', text: 'Saved setups unavailable' }));
+      App.toast('Could not list saved setups: ' + err.message, true);
+      return;
+    }
     dom.clear(picker);
-    picker.appendChild(dom.el('option', { value: '', text: 'Load setup…' }));
-    App.persistence.listLocal()
-      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
-      .forEach(entry => {
-        picker.appendChild(dom.el('option', { value: entry.id, text: entry.name }));
-      });
+    picker.appendChild(dom.el('option', { value: '', text: entries.length ? 'Load setup…' : 'No saved setups yet' }));
+    entries.forEach(entry => {
+      picker.appendChild(dom.el('option', { value: entry.id, text: entry.name }));
+    });
     picker.value = current && dom.qsa('option', picker).some(o => o.value === current) ? current : '';
   }
 
@@ -65,17 +72,32 @@ window.App = window.App || {};
     App.canvas.fitToStudioSketch();
   }
 
-  function saveLocal() {
+  async function saveLocal() {
     const setup = App.Store.getSetup();
-    const res = App.persistence.saveLocal(setup);
-    if (res.ok) { refreshSetupPicker(); App.toast(`Saved "${setup.name}" to this browser.`); }
-    else App.toast(res.reason, true);
+    const btn = dom.qs('#btn-save-local');
+    btn.disabled = true;
+    try {
+      const res = await App.persistence.saveLocal(setup);
+      if (res.ok) {
+        await refreshSetupPicker();
+        App.toast(`Saved "${setup.name}" (${res.file}).`);
+      } else {
+        App.toast(res.reason, true);
+      }
+    } finally {
+      btn.disabled = false;
+    }
   }
 
-  function loadLocal(id) {
+  async function loadLocal(id) {
     if (!id) return;
-    const setup = App.persistence.loadLocal(id);
-    if (setup) App.Store.setSetup(setup);
+    try {
+      const setup = await App.persistence.loadLocal(id);
+      if (setup) { App.Store.setSetup(setup); App.toast(`Loaded "${setup.name}".`); }
+      else App.toast('That setup no longer exists on the server.', true);
+    } catch (err) {
+      App.toast('Could not load that setup: ' + err.message, true);
+    }
   }
 
   function initPanelDrawers() {

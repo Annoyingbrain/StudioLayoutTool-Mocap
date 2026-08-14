@@ -32,6 +32,7 @@
 # begins parked.
 import argparse
 import json
+import re
 import sys
 import threading
 import time
@@ -396,12 +397,159 @@ def ws_handler(websocket):
         pass
 
 
+# --- Setup storage -----------------------------------------------------
+#
+# Setups live as plain .json files in a folder on this machine (--setups-dir),
+# served over a small API rather than kept in the browser's local storage.
+# That way every device on the LAN opens the same set of setups, and they're
+# ordinary files that can be backed up or synced. Filenames are derived from
+# the setup's name so the folder is browsable, but identity is the setup's
+# own id inside the file -- renaming a setup moves its file rather than
+# leaving a duplicate behind.
+SETUPS_DIR = None
+
+# Ids come from the client, so they're never trusted into a path. Only this
+# shape is accepted, and filenames are always built server-side.
+SAFE_ID = re.compile(r'^[A-Za-z0-9_-]{1,128}$')
+
+
+def setup_filename(setup):
+    cleaned = re.sub(r'[^A-Za-z0-9 _()-]+', '_', setup.get('name') or '').strip()
+    return f"{(cleaned or 'setup')[:80]}.json"
+
+
+def read_setup_file(path):
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) and data.get('id') else None
+
+
+def list_setups():
+    entries = []
+    for path in SETUPS_DIR.glob('*.json'):
+        data = read_setup_file(path)
+        if not data:
+            continue  # not one of ours (or unreadable) -- leave it alone
+        entries.append({
+            'id': data['id'],
+            'name': data.get('name') or path.stem,
+            'updatedAt': data.get('updatedAt'),
+            'sceneCount': len(data.get('scenes') or []),
+            'file': path.name,
+        })
+    entries.sort(key=lambda e: e.get('updatedAt') or '', reverse=True)
+    return entries
+
+
+def find_setup_path(setup_id):
+    for path in SETUPS_DIR.glob('*.json'):
+        data = read_setup_file(path)
+        if data and data['id'] == setup_id:
+            return path
+    return None
+
+
+def write_setup(setup):
+    existing = find_setup_path(setup['id'])
+    target = SETUPS_DIR / setup_filename(setup)
+    # A rename should move the file, not leave the old one behind as a
+    # duplicate of the same setup.
+    if existing and existing != target:
+        try:
+            existing.unlink()
+        except OSError:
+            pass
+    # Another setup may already own that filename -- keep both by
+    # disambiguating rather than silently overwriting someone else's file.
+    if target.exists():
+        other = read_setup_file(target)
+        if other and other['id'] != setup['id']:
+            target = SETUPS_DIR / f"{target.stem} ({setup['id'][-6:]}).json"
+    # Write via a temp file so an interrupted save can't truncate a good one.
+    tmp = target.with_suffix('.json.tmp')
+    tmp.write_text(json.dumps(setup, indent=2), encoding='utf-8')
+    tmp.replace(target)
+    return target
+
+
 class QuietStaticHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
     def log_message(self, format, *args):
         pass  # the NatNet bridge already prints its own status lines
+
+    # --- tiny JSON helpers ---
+    def _send_json(self, payload, status=200):
+        body = json.dumps(payload).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _error(self, status, message):
+        self._send_json({'error': message}, status)
+
+    def _read_json_body(self):
+        length = int(self.headers.get('Content-Length') or 0)
+        if length <= 0:
+            return None
+        return json.loads(self.rfile.read(length).decode('utf-8'))
+
+    def _api_id(self):
+        """The <id> in /api/setups/<id>, or None for the collection itself."""
+        rest = self.path[len('/api/setups'):].split('?', 1)[0]
+        return rest.lstrip('/') or None
+
+    def do_GET(self):
+        if not self.path.split('?', 1)[0].startswith('/api/setups'):
+            return super().do_GET()
+        setup_id = self._api_id()
+        if setup_id is None:
+            return self._send_json(list_setups())
+        if not SAFE_ID.match(setup_id):
+            return self._error(400, 'Bad setup id')
+        path = find_setup_path(setup_id)
+        if not path:
+            return self._error(404, 'No such setup')
+        return self._send_json(read_setup_file(path))
+
+    def do_PUT(self):
+        if not self.path.split('?', 1)[0].startswith('/api/setups'):
+            return self._error(404, 'Not found')
+        setup_id = self._api_id()
+        if not setup_id or not SAFE_ID.match(setup_id):
+            return self._error(400, 'Bad setup id')
+        try:
+            setup = self._read_json_body()
+        except Exception as e:
+            return self._error(400, f'Body is not valid JSON: {e}')
+        if not isinstance(setup, dict) or setup.get('id') != setup_id:
+            return self._error(400, "Body must be a setup whose id matches the URL")
+        try:
+            path = write_setup(setup)
+        except OSError as e:
+            return self._error(500, f'Could not write the setup: {e}')
+        return self._send_json({'ok': True, 'file': path.name})
+
+    def do_DELETE(self):
+        if not self.path.split('?', 1)[0].startswith('/api/setups'):
+            return self._error(404, 'Not found')
+        setup_id = self._api_id()
+        if not setup_id or not SAFE_ID.match(setup_id):
+            return self._error(400, 'Bad setup id')
+        path = find_setup_path(setup_id)
+        if not path:
+            return self._error(404, 'No such setup')
+        try:
+            path.unlink()
+        except OSError as e:
+            return self._error(500, f'Could not delete the setup: {e}')
+        return self._send_json({'ok': True})
 
 
 def main():
@@ -418,6 +566,12 @@ def main():
     # never exits, and the caller hangs forever with no timeout and no
     # exception. Confirmed against Motive 3.5.0.1 / NatNet 4.5 -- this was
     # the cause of the silent hang that made Live mode look dead.
+    parser.add_argument(
+        "--setups-dir", default=str(ROOT / "setups"),
+        help="Folder to keep saved setups in, as plain .json files (default: %(default)s). "
+             "Every device on the network shares this one folder, so it's also the thing "
+             "to back up. Created if it doesn't exist.",
+    )
     parser.add_argument(
         "--no-gui", action="store_true",
         help="Don't open the Start/Stop control window; run console-only (also the automatic "
@@ -456,9 +610,14 @@ def main():
         connection_timeout=args.connection_timeout,
     )
 
+    global SETUPS_DIR
+    SETUPS_DIR = Path(args.setups_dir).expanduser().resolve()
+    SETUPS_DIR.mkdir(parents=True, exist_ok=True)
+
     httpd = ThreadingHTTPServer((args.host, args.http_port), QuietStaticHandler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     print(f"Serving app at         http://localhost:{args.http_port}/")
+    print(f"Saving setups to       {SETUPS_DIR}")
 
     # The WS/HTTP servers come up immediately regardless of whether Motive
     # is reachable -- the Motive connection attempt (which can stall, see

@@ -94,6 +94,19 @@ window.App = window.App || {};
 
   function configReady(cfg) { return !!(cfg.token && cfg.owner && cfg.repo); }
 
+  // The setups folder on the server is the primary store -- the toolbar's
+  // Save and "Load setup…" are the everyday path, and GitHub is a backup of
+  // it. So anything that goes to or comes from the repo is mirrored into
+  // that folder, otherwise a setup could exist only in GitHub and be missing
+  // from the list you normally work from. A failure there is reported but
+  // never fails the GitHub operation itself, which has already succeeded by
+  // this point.
+  async function mirrorLocally(setup) {
+    const res = await App.persistence.saveLocal(setup);
+    if (App.toolbar && App.toolbar.refreshSetupPicker) await App.toolbar.refreshSetupPicker();
+    return res;
+  }
+
   // Read-modify-write the index with retry: two overlapping saves/refreshes
   // (e.g. the auto-refresh on load racing a manual click, or Save's own
   // index update overlapping a Refresh) can both read the same sha and then
@@ -145,8 +158,11 @@ window.App = window.App || {};
         return [entry, ...current.filter(e => e.id !== setup.id)];
       }, `Update setups index — ${setup.name}`);
 
-      setStatus(`Saved to ${cfg.owner}/${cfg.repo}/${path}`);
-      App.toast(`Setup saved to GitHub: ${path}`);
+      const local = await mirrorLocally(setup);
+      setStatus(`Backed up to ${cfg.owner}/${cfg.repo}/${path}` + (local.ok ? '' : ` (but saving locally failed: ${local.reason})`));
+      App.toast(local.ok
+        ? `Setup backed up to GitHub: ${path}`
+        : `Backed up to GitHub, but the local save failed: ${local.reason}`, !local.ok);
       await refreshLoadList(cfg);
     } catch (err) {
       setStatus(err.message, true);
@@ -240,9 +256,15 @@ window.App = window.App || {};
     try {
       const { data } = await fetchJsonFile(cfg, `setups/${id}.json`);
       if (!data) throw new Error('That setup file no longer exists in the repo.');
-      App.Store.setSetup(migrateSetup(data));
-      setStatus(`Loaded "${data.name}" from GitHub.`);
-      App.toast(`Loaded "${data.name}" from GitHub.`);
+      const setup = migrateSetup(data);
+      App.Store.setSetup(setup);
+      // Restoring a backup should land it in the local store too, so it's
+      // in the toolbar's "Load setup…" list from here on.
+      const local = await mirrorLocally(setup);
+      setStatus(`Restored "${setup.name}" from GitHub.` + (local.ok ? '' : ` (saving it locally failed: ${local.reason})`));
+      App.toast(local.ok
+        ? `Restored "${setup.name}" from GitHub — also saved on this machine.`
+        : `Restored "${setup.name}", but the local save failed: ${local.reason}`, !local.ok);
     } catch (err) {
       setStatus(err.message, true);
       App.toast('GitHub load failed: ' + err.message, true);

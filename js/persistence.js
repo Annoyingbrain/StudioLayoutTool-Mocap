@@ -1,10 +1,7 @@
-// Local (browser) persistence for quick save/load, plus the authoritative
-// file-based export/import so setups can be moved between machines and won't
-// be lost to a browser storage-quota limit (images are embedded as data URLs).
+// Saving/loading setups, plus the file-based export/import for moving a
+// setup between machines by hand.
 window.App = window.App || {};
 
-const LS_INDEX_KEY = 'vps_setups_index';
-const LS_SETUP_PREFIX = 'vps_setup_';
 const LS_MOTIVE_CALIBRATION_KEY = 'vps_motive_calibration';
 
 // Older saved/exported setups (before multi-scene support) kept props,
@@ -32,36 +29,48 @@ function migrateSetup(setup) {
   return setup;
 }
 
+// Setups are stored as .json files in a folder on the machine running
+// server.py (its --setups-dir), reached over a small API. Deliberately not
+// browser local storage: every device on the network then shares one set of
+// setups instead of each browser profile keeping its own invisible copy,
+// and they end up as ordinary files that can be backed up. GitHub Sync is a
+// separate, manual backup of the same setups.
 App.persistence = {
-  listLocal() {
+  async listLocal() {
+    const res = await fetch('/api/setups', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Could not list setups (${res.status})`);
+    return res.json();
+  },
+
+  async saveLocal(setup) {
     try {
-      return JSON.parse(localStorage.getItem(LS_INDEX_KEY) || '[]');
+      const res = await fetch(`/api/setups/${encodeURIComponent(setup.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(setup)
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return { ok: false, reason: body.error || `Server refused the save (${res.status})` };
+      }
+      return { ok: true, file: (await res.json()).file };
     } catch (e) {
-      return [];
+      // Typically server.py not running, or the page loaded from somewhere
+      // that isn't it.
+      return { ok: false, reason: `Couldn't reach the server (${e.message}). Is server.py running?` };
     }
   },
 
-  saveLocal(setup) {
-    const index = this.listLocal().filter(e => e.id !== setup.id);
-    index.unshift({ id: setup.id, name: setup.name, updatedAt: setup.updatedAt });
-    try {
-      localStorage.setItem(LS_SETUP_PREFIX + setup.id, JSON.stringify(setup));
-      localStorage.setItem(LS_INDEX_KEY, JSON.stringify(index));
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, reason: 'Browser storage is full (large images?). Use Export .json to save to a file instead.' };
-    }
+  async loadLocal(id) {
+    const res = await fetch(`/api/setups/${encodeURIComponent(id)}`, { cache: 'no-store' });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Could not load that setup (${res.status})`);
+    return migrateSetup(await res.json());
   },
 
-  loadLocal(id) {
-    const raw = localStorage.getItem(LS_SETUP_PREFIX + id);
-    return raw ? migrateSetup(JSON.parse(raw)) : null;
-  },
-
-  deleteLocal(id) {
-    localStorage.removeItem(LS_SETUP_PREFIX + id);
-    const index = this.listLocal().filter(e => e.id !== id);
-    localStorage.setItem(LS_INDEX_KEY, JSON.stringify(index));
+  async deleteLocal(id) {
+    const res = await fetch(`/api/setups/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!res.ok && res.status !== 404) throw new Error(`Could not delete that setup (${res.status})`);
   },
 
   // Live tracking calibration (js/motive/motiveCalibration.js) -- a rig
