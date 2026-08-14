@@ -117,11 +117,27 @@ def connect_with_hard_timeout(client, soft_timeout):
     result = {}
 
     def worker():
-        result['connected'] = client.connect(soft_timeout)
+        try:
+            result['connected'] = client.connect(soft_timeout)
+        except Exception as e:
+            # Runs in a background thread -- an uncaught exception here
+            # would normally still print via threading.excepthook, but
+            # catch explicitly so it's unmistakably tagged as coming from
+            # here rather than blending into other output.
+            result['exception'] = e
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()
-    t.join(timeout=soft_timeout + CONNECT_HARD_TIMEOUT_SEC)
+    deadline = time.time() + soft_timeout + CONNECT_HARD_TIMEOUT_SEC
+    poll_count = 0
+    while t.is_alive() and time.time() < deadline:
+        t.join(timeout=5.0)
+        if t.is_alive():
+            poll_count += 1
+            print(f"[natnet] still attempting to connect... ({poll_count * 5}s elapsed)", file=sys.stderr)
+    if 'exception' in result:
+        print(f"[natnet] connect() raised: {result['exception']!r}", file=sys.stderr)
+        return False
     if t.is_alive():
         print(
             f"[natnet] connect() didn't respond within {soft_timeout + CONNECT_HARD_TIMEOUT_SEC:.0f}s -- "
@@ -137,6 +153,12 @@ def connect_with_hard_timeout(client, soft_timeout):
 
 
 def connect_and_stream(natnet_params, ws_server, stop_event):
+    print(
+        f"[natnet] attempting to connect to Motive at {natnet_params.server_address}:"
+        f"{natnet_params.command_port} (multicast={natnet_params.use_multicast}, "
+        f"local_interface={natnet_params.local_ip_address})...",
+        file=sys.stderr,
+    )
     client = NatNetClient(natnet_params)
     connected = connect_with_hard_timeout(client, natnet_params.connection_timeout or 5.0)
     if not connected:
@@ -187,7 +209,11 @@ def main():
     parser.add_argument("--ws-port", type=int, default=8001, help="Live tracking WebSocket port (default: %(default)s)")
     NatNetParams.argparse_group(parser)
     args = parser.parse_args()
-    sys.stdout.reconfigure(line_buffering=True)  # status lines below matter even when output is redirected to a log file
+    # Status/diagnostic lines matter even when output is redirected to a log
+    # file -- stderr especially, since every connection diagnostic goes there
+    # and a block-buffered stderr can withhold them indefinitely.
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
     # Not NatNetParams.from_parser(args) -- that classmethod reads
     # args.local_ip_address, but its own argparse_group() above defines the
     # flag as --local-address (dest local_address), so from_parser always
