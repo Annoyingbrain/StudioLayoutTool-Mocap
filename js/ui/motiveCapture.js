@@ -118,6 +118,60 @@ window.App = window.App || {};
       `<span class="${errClass}">Jitter: ${capture.jitterMm.toFixed(2)} mm (from ${capture.frameCount} frames)</span>`;
   }
 
+  // Alternative to the per-point wand-touch capture above: load a CSV of a
+  // 3-marker reference tracker (e.g. the Triangle probe) placed flat on top
+  // of the prop, and use its centroid for BOTH X/Y position and height --
+  // Motive's raw Y (up-axis) reading converts straight to real height above
+  // the studio floor (App.motiveTransform.heightFromRawY), accounting for
+  // the Triangle's own markers sitting 1cm above whatever it rests on.
+  // Position-only (like a 1-point wand capture): doesn't touch rotation.
+  const TRIANGLE_STANDOFF_MM = 10;
+
+  async function handleReferenceTrackerCsvFile(file) {
+    const prop = currentProp();
+    if (!prop) return;
+    const resultEl = dom.qs('#ref-tracker-result');
+
+    const text = await App.dom.readFileAsText(file);
+    // A take can have more than one tracked object (e.g. Reference trackers/
+    // cam and table.csv has both a camera and the Triangle probe) -- prefer
+    // whichever isn't camera-named, since a camera isn't a sensible
+    // position/height reference for a prop.
+    const rbNames = App.motiveCsv.listRigidBodyNames(text);
+    const assetName = rbNames.length > 1 ? (rbNames.find(n => !/camera/i.test(n)) || rbNames[0]) : undefined;
+    const parsed = App.motiveCsv.parse(text, assetName);
+    if (!parsed || !parsed.frames.length) {
+      resultEl.innerHTML = `<span class="err-bad">Couldn't find any usable frames in that file.</span>`;
+      return;
+    }
+
+    const centroidOf = pts => {
+      const n = pts.length;
+      return pts.reduce((acc, p) => ({ x: acc.x + p.x / n, y: acc.y + p.y / n, z: acc.z + p.z / n }), { x: 0, y: 0, z: 0 });
+    };
+    const frameCentroids = parsed.frames.map(f => centroidOf(f.markers));
+    const avg = centroidOf(frameCentroids);
+    const jitterMm = Math.sqrt(frameCentroids.reduce((sum, c) => {
+      const dx = c.x - avg.x, dy = c.y - avg.y, dz = c.z - avg.z;
+      return sum + dx * dx + dy * dy + dz * dz;
+    }, 0) / frameCentroids.length);
+
+    const appPoint = App.motiveTransform.toAppWorld(avg);
+    const heightM = App.motiveTransform.heightFromRawY(avg.y, TRIANGLE_STANDOFF_MM);
+
+    App.Store.updateProp(prop.id, {
+      x: Math.round(appPoint.x * 1000) / 1000,
+      y: Math.round(appPoint.y * 1000) / 1000,
+      heightM: Math.round(heightM * 1000) / 1000,
+      positionSource: 'measured'
+    });
+
+    const errClass = jitterMm < 1 ? 'err-ok' : (jitterMm < 5 ? 'err-warn' : 'err-bad');
+    resultEl.innerHTML =
+      `X = ${appPoint.x.toFixed(3)} m, Y = ${appPoint.y.toFixed(3)} m, Height = ${heightM.toFixed(3)} m<br>` +
+      `<span class="${errClass}">Jitter: ${jitterMm.toFixed(2)} mm (from ${frameCentroids.length} frames)</span>`;
+  }
+
   function solveObject() {
     const prop = currentProp();
     if (!prop) return;
@@ -147,6 +201,11 @@ window.App = window.App || {};
       dom.qs('#motive-csv-input').addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) handleCsvFile(file);
+        e.target.value = '';
+      });
+      dom.qs('#ref-tracker-csv-input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) handleReferenceTrackerCsvFile(file);
         e.target.value = '';
       });
       initTipExtensionInput();

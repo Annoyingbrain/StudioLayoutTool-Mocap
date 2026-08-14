@@ -1,5 +1,6 @@
 // The 2D top-down studio canvas: grid, props (rectangles, triangles, or
-// circles) with drag-move, drag-rotate and drag-resize.
+// circles) with drag-move, drag-rotate and drag-resize, and cameras (their
+// own category, drag-move + drag-rotate only -- no resize).
 window.App = window.App || {};
 
 (function () {
@@ -8,6 +9,16 @@ window.App = window.App || {};
   const ROT_HANDLE_R = 7;
   const DIR_ARROW_LEN_M = 0.15; // how far past the prop's front edge the direction arrow extends
   const DIR_ARROW_HEAD_PX = 7;
+
+  // Camera body icon: lens points along its own +X (right) in the source
+  // PNG, so it's drawn rotated to match the camera's local +Y (forward) --
+  // see drawCamera(). Rendered at a fixed real-world width, height scaled to
+  // match the image's own aspect ratio.
+  const CAMERA_ICON_WIDTH_M = 0.5;
+  const cameraIcon = new Image();
+  let cameraIconLoaded = false;
+  cameraIcon.onload = () => { cameraIconLoaded = true; if (App.canvas) App.canvas.render(); };
+  cameraIcon.src = 'assets/icons/camera.png';
 
   let canvas, ctx, wrap;
   let dragState = null;
@@ -214,6 +225,140 @@ window.App = window.App || {};
     }
   }
 
+  // A dolly-move recording sampled into a path (js/ui/cameraCapture.js's
+  // handleTrackCsvFile) -- purely a position trail, drawn behind the camera
+  // icon itself.
+  function drawCameraTrail(view, camera) {
+    const pts = camera.trail.map(p => geo.worldToScreen(view, p.x, p.y));
+    ctx.save();
+    ctx.strokeStyle = camera.color;
+    ctx.globalAlpha = 0.6;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Draws just the camera body icon (image, or the plain wedge fallback
+  // while it loads) at an arbitrary { x, y, rotationDeg } -- shared between
+  // the real camera entity (drawCamera) and the plain position+rotation
+  // snapshots at a trail's start/end (drawCameraTrailEndpoint), which aren't
+  // full camera objects.
+  function drawCameraIconShape(view, pos, color, selected, alpha) {
+    const center = geo.worldToScreen(view, pos.x, pos.y);
+    const pts = geo.cameraShapeWorldPoints(pos).map(p => geo.worldToScreen(view, p.x, p.y));
+
+    ctx.save();
+    ctx.globalAlpha = alpha == null ? 1 : alpha;
+    if (selected) {
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, CAMERA_ICON_WIDTH_M / 2 * view.scale + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = '#4da6ff';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+    if (cameraIconLoaded) {
+      // The icon's lens points along its own +X (right) as drawn -- rotate
+      // to match the screen-space direction of the position's local +Y
+      // (forward), found the same way drawDirectionArrow finds its angle:
+      // project a world-space forward point through worldToScreen and take
+      // the angle to it, so it's correct under the canvas's fixed 180-degree
+      // display rotation without duplicating that math here.
+      const forwardWorld = geo.rotatePoint(pos.x, pos.y + 0.3, pos.x, pos.y, pos.rotationDeg);
+      const forwardScreen = geo.worldToScreen(view, forwardWorld.x, forwardWorld.y);
+      const screenAngle = Math.atan2(forwardScreen.y - center.y, forwardScreen.x - center.x);
+      const w = CAMERA_ICON_WIDTH_M * view.scale;
+      const h = w * (cameraIcon.naturalHeight / cameraIcon.naturalWidth);
+      ctx.translate(center.x, center.y);
+      ctx.rotate(screenAngle);
+      ctx.drawImage(cameraIcon, -w / 2, -h / 2, w, h);
+    } else {
+      ctx.beginPath();
+      pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+      ctx.closePath();
+      ctx.fillStyle = color + '55';
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.restore();
+    return { center, pts };
+  }
+
+  // A camera icon at a trail's start/end (js/ui/cameraCapture.js's
+  // handleTrackCsvFile) -- smaller and semi-transparent so it reads as a
+  // snapshot along the path, not the camera's actual current position.
+  function drawCameraTrailEndpoint(view, pos, color, label) {
+    const { center } = drawCameraIconShape(view, pos, color, false, 0.55);
+    ctx.save();
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = '#e8eaed';
+    ctx.font = 'bold 10px Segoe UI, Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(label, center.x, center.y + CAMERA_ICON_WIDTH_M / 2 * view.scale * 0.6);
+    ctx.restore();
+  }
+
+  // Cameras are their own category from props: tracked via 3 fixed rig
+  // markers (back/left/right) instead of a resizable rect's corners -- see
+  // App.cameraLocalMarkers in js/state.js. Hit-testing and js/floorPngExport.js
+  // still use the simple forward-pointing wedge (App.geometry.
+  // cameraShapeWorldPoints/CAMERA_SHAPE_LOCAL) -- only the on-canvas visual
+  // here uses the camera.png icon.
+  function drawCamera(view, camera, selected) {
+    const { center, pts } = drawCameraIconShape(view, camera, camera.color, selected);
+
+    ctx.save();
+    ctx.fillStyle = '#e8eaed';
+    ctx.font = 'bold 11px Segoe UI, Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // Camera's x/y is the icon's rotation pivot, which sits inside the
+    // body's transparent interior (not the lens flag) -- verified against
+    // assets/icons/camera.png directly, not assumed. Text stays upright
+    // (not rotated with the icon) so it's always readable.
+    ctx.fillText(camera.name, center.x, center.y);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+
+    if (camera.positionSource === 'measured') {
+      ctx.save();
+      ctx.fillStyle = '#6fd08c';
+      ctx.beginPath();
+      ctx.arc(pts[0].x, pts[0].y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    if (selected) {
+      ctx.save();
+      const rotHandleWorld = geo.cameraRotationHandlePos(camera);
+      const rotHandle = geo.worldToScreen(view, rotHandleWorld.x, rotHandleWorld.y);
+      ctx.strokeStyle = '#4da6ff';
+      ctx.beginPath(); ctx.moveTo(center.x, center.y); ctx.lineTo(rotHandle.x, rotHandle.y); ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(rotHandle.x, rotHandle.y, ROT_HANDLE_R, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#0d0f12'; ctx.stroke();
+      ctx.restore();
+
+      if (App.cameraCapture) {
+        const markerKey = App.cameraCapture.getSelectedMarkerKey();
+        const worldPt = geo.cameraMarkerWorldPosition(camera, markerKey);
+        const s = geo.worldToScreen(view, worldPt.x, worldPt.y);
+        ctx.save();
+        ctx.strokeStyle = '#ff5ac8';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(s.x, s.y, 9, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(s.x, s.y, 2, 0, Math.PI * 2); ctx.fillStyle = '#ff5ac8'; ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
   function render() {
     resizeCanvasToDisplaySize();
     const w = wrap.clientWidth, h = wrap.clientHeight;
@@ -221,10 +366,19 @@ window.App = window.App || {};
     const scene = App.Store.getScene();
     const view = scene.view;
     const selectedId = App.Store.getSelectedPropId();
+    const selectedCameraId = App.Store.getSelectedCameraId();
 
     if (App.dom.qs('#chk-grid').checked) drawGrid(view, w, h);
     if (App.dom.qs('#chk-studio-sketch').checked) drawStudioSketch(view);
     scene.props.forEach(p => drawProp(view, p, p.id === selectedId));
+    scene.cameras.forEach(c => { if (c.trail) drawCameraTrail(view, c); });
+    scene.cameras.forEach(c => {
+      if (c.trailEndpoints) {
+        drawCameraTrailEndpoint(view, c.trailEndpoints.start, c.color, 'Start');
+        drawCameraTrailEndpoint(view, c.trailEndpoints.end, c.color, 'End');
+      }
+    });
+    scene.cameras.forEach(c => drawCamera(view, c, c.id === selectedCameraId));
 
     // Each scene has its own pan/zoom; keep the px/m readout in sync when
     // switching scenes (not just when zooming the current one).
@@ -239,6 +393,10 @@ window.App = window.App || {};
     const tool = App.Store.getTool();
     if (tool === 'add-prop') {
       hint.textContent = 'Click on the canvas to place the prop.';
+    } else if (tool === 'add-camera') {
+      hint.textContent = 'Click on the canvas to place the camera.';
+    } else if (App.Store.getSelectedCamera()) {
+      hint.textContent = 'Drag to move · top handle rotates · wheel to zoom · middle-drag or space+drag to pan';
     } else {
       const selected = App.Store.getSelectedProp();
       hint.textContent = selected && selected.shape === 'circle'
@@ -250,6 +408,24 @@ window.App = window.App || {};
   function hitTestProp(scene, worldPt) {
     for (let i = scene.props.length - 1; i >= 0; i--) {
       if (geo.pointInProp(worldPt.x, worldPt.y, scene.props[i])) return scene.props[i];
+    }
+    return null;
+  }
+
+  function hitTestCamera(scene, worldPt) {
+    for (let i = scene.cameras.length - 1; i >= 0; i--) {
+      const pts = geo.cameraShapeWorldPoints(scene.cameras[i]);
+      if (geo.pointInTriangle(worldPt, pts[0], pts[1], pts[2])) return scene.cameras[i];
+    }
+    return null;
+  }
+
+  function hitTestCameraHandle(view, camera, screenPt, pointerType) {
+    const pad = pointerType === 'touch' || pointerType === 'pen' ? 16 : 3;
+    const rotWorld = geo.cameraRotationHandlePos(camera);
+    const rotScreen = geo.worldToScreen(view, rotWorld.x, rotWorld.y);
+    if (geo.distance(screenPt.x, screenPt.y, rotScreen.x, rotScreen.y) <= ROT_HANDLE_R + pad) {
+      return { kind: 'rotate' };
     }
     return null;
   }
@@ -316,14 +492,20 @@ window.App = window.App || {};
       App.Store.setTool('select');
       return;
     }
+    if (evt.button === 0 && tool === 'add-camera') {
+      const camera = App.factories.newCamera(round3(world.x), round3(world.y), scene.cameras.length);
+      App.Store.addCamera(camera);
+      App.Store.setTool('select');
+      return;
+    }
 
     if (evt.button !== 0) return;
 
-    const selected = App.Store.getSelectedProp();
-    if (selected) {
-      const handle = hitTestHandles(scene.view, selected, screen, evt.pointerType);
+    const selectedProp = App.Store.getSelectedProp();
+    if (selectedProp) {
+      const handle = hitTestHandles(scene.view, selectedProp, screen, evt.pointerType);
       if (handle && handle.kind === 'rotate') {
-        dragState = { kind: 'rotate', propId: selected.id, center: { x: selected.x, y: selected.y } };
+        dragState = { kind: 'rotate', entity: 'prop', entityId: selectedProp.id, center: { x: selectedProp.x, y: selectedProp.y } };
         return;
       }
       if (handle && handle.kind === 'select-point') {
@@ -331,18 +513,37 @@ window.App = window.App || {};
         return;
       }
     }
+    const selectedCamera = App.Store.getSelectedCamera();
+    if (selectedCamera) {
+      const handle = hitTestCameraHandle(scene.view, selectedCamera, screen, evt.pointerType);
+      if (handle && handle.kind === 'rotate') {
+        dragState = { kind: 'rotate', entity: 'camera', entityId: selectedCamera.id, center: { x: selectedCamera.x, y: selectedCamera.y } };
+        return;
+      }
+    }
 
-    const hit = hitTestProp(scene, world);
-    if (hit) {
-      App.Store.selectProp(hit.id);
-      dragState = { kind: 'move', propId: hit.id, startWorld: world, startProp: { x: hit.x, y: hit.y } };
-    } else if (evt.pointerType === 'touch' || evt.pointerType === 'pen') {
+    const hitProp = hitTestProp(scene, world);
+    if (hitProp) {
+      App.Store.selectProp(hitProp.id);
+      dragState = { kind: 'move', entity: 'prop', entityId: hitProp.id, startWorld: world, startEntity: { x: hitProp.x, y: hitProp.y } };
+      return;
+    }
+    const hitCamera = hitTestCamera(scene, world);
+    if (hitCamera) {
+      App.Store.selectCamera(hitCamera.id);
+      dragState = { kind: 'move', entity: 'camera', entityId: hitCamera.id, startWorld: world, startEntity: { x: hitCamera.x, y: hitCamera.y } };
+      return;
+    }
+
+    if (evt.pointerType === 'touch' || evt.pointerType === 'pen') {
       // No space-bar/middle-click on touch -- a single-finger drag that
-      // doesn't start on a prop pans the view instead of doing nothing.
+      // doesn't start on a prop/camera pans the view instead of doing nothing.
       App.Store.selectProp(null);
+      App.Store.selectCamera(null);
       dragState = { kind: 'pan', startScreen: screen, startOrigin: { x: scene.view.originX, y: scene.view.originY } };
     } else {
       App.Store.selectProp(null);
+      App.Store.selectCamera(null);
     }
   }
 
@@ -383,18 +584,22 @@ window.App = window.App || {};
 
     if (dragState.kind === 'move') {
       const dx = world.x - dragState.startWorld.x, dy = world.y - dragState.startWorld.y;
-      App.Store.updateProp(dragState.propId, {
-        x: round3(dragState.startProp.x + dx),
-        y: round3(dragState.startProp.y + dy),
+      const patch = {
+        x: round3(dragState.startEntity.x + dx),
+        y: round3(dragState.startEntity.y + dy),
         positionSource: 'manual'
-      });
+      };
+      if (dragState.entity === 'camera') App.Store.updateCamera(dragState.entityId, patch);
+      else App.Store.updateProp(dragState.entityId, patch);
       return;
     }
 
     if (dragState.kind === 'rotate') {
       const dx = world.x - dragState.center.x, dy = world.y - dragState.center.y;
       let deg = Math.atan2(dy, dx) * 180 / Math.PI - 90;
-      App.Store.updateProp(dragState.propId, { rotationDeg: Math.round(deg * 10) / 10, positionSource: 'manual' });
+      const patch = { rotationDeg: Math.round(deg * 10) / 10, positionSource: 'manual' };
+      if (dragState.entity === 'camera') App.Store.updateCamera(dragState.entityId, patch);
+      else App.Store.updateProp(dragState.entityId, patch);
       return;
     }
 

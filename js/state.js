@@ -24,6 +24,32 @@ App.propPointsFor = function (prop) {
   return App.PROP_POINTS;
 };
 
+// Cameras are a separate category from props: tracked via 3 markers on the
+// camera body (back + left + right) rather than a resizable rect's 5 points.
+App.CAMERA_POINTS = [
+  { key: 'back', label: 'Back' },
+  { key: 'left', label: 'Left' },
+  { key: 'right', label: 'Right' }
+];
+
+// Camera marker rig geometry (measured 2026-08-14, Reference trackers/
+// Camera.csv): Motive's Marker001=back, Marker002=right, Marker003=left.
+// Local frame: origin at the left/right midpoint (= the camera's x/y),
+// +Y = forward (lens direction, away from the back marker), +X = camera's
+// right -- matching the "local +Y = front" convention js/canvas.js's
+// direction arrow already uses for rect props.
+(function () {
+  const distBackRight = 0.23, distRightLeft = 0.12, distBackLeft = 0.26;
+  const w = distRightLeft;
+  const bx = (distBackLeft ** 2 - distBackRight ** 2) / (2 * w);
+  const by = -Math.sqrt(Math.max(0, distBackRight ** 2 - (bx - w / 2) ** 2));
+  App.cameraLocalMarkers = {
+    right: { x: w / 2, y: 0 },
+    left: { x: -w / 2, y: 0 },
+    back: { x: bx, y: by }
+  };
+})();
+
 App.factories = {
   PROP_COLORS: ['#4da6ff', '#7fd08c', '#e0b95a', '#c98bdb', '#ff8a65', '#5ac8fa'],
 
@@ -45,9 +71,31 @@ App.factories = {
     };
   },
 
+  newCamera(x, y, colorIndex) {
+    return {
+      id: App.makeId('camera'),
+      name: 'Camera',
+      x, y,
+      rotationDeg: 0,
+      color: App.factories.PROP_COLORS[(colorIndex || 0) % App.factories.PROP_COLORS.length],
+      notes: '',
+      positionSource: 'manual', // 'manual' | 'measured'
+      measuredMarkers: { back: null, left: null, right: null },
+      lastSolve: null,
+      // Sampled path (app-world {x,y} points) from a dolly-move Motive
+      // recording (js/ui/cameraCapture.js) -- purely a visual trail, not an
+      // editable/solved entity. null until a track CSV is loaded.
+      trail: null,
+      // Position + rotation at the trail's start/end (each { x, y,
+      // rotationDeg }), for drawing oriented camera icons at both ends.
+      // null until a track CSV is loaded.
+      trailEndpoints: null
+    };
+  },
+
   // A scene is one prop layout within a setup -- e.g. different camera
   // angles or shots filmed in the same physical studio configuration.
-  // Props, frame grab, and view are per-scene.
+  // Props, cameras, frame grab, and view are per-scene.
   newScene(name) {
     const now = new Date().toISOString();
     return {
@@ -56,6 +104,7 @@ App.factories = {
       createdAt: now,
       updatedAt: now,
       props: [],
+      cameras: [],
       frameGrab: null,    // { imageDataUrl, caption }
       view: { scale: 40, originX: 400, originY: 400 }
     };
@@ -79,6 +128,7 @@ App.factories = {
 App.Store = (function () {
   let setup = App.factories.newSetup('Untitled Setup');
   let selectedPropId = null;
+  let selectedCameraId = null;
   let tool = 'select';
   const listeners = [];
 
@@ -89,7 +139,7 @@ App.Store = (function () {
     subscribe(fn) { listeners.push(fn); return () => listeners.splice(listeners.indexOf(fn), 1); },
 
     getSetup() { return setup; },
-    setSetup(newSetup) { setup = newSetup; selectedPropId = null; emit(); },
+    setSetup(newSetup) { setup = newSetup; selectedPropId = null; selectedCameraId = null; emit(); },
     touch() { setup.updatedAt = new Date().toISOString(); emit(); },
 
     getScene() { return currentScene(); },
@@ -99,6 +149,7 @@ App.Store = (function () {
       if (!setup.scenes.some(s => s.id === id) || id === setup.activeSceneId) return;
       setup.activeSceneId = id;
       selectedPropId = null;
+      selectedCameraId = null;
       emit();
     },
     addScene(name) {
@@ -106,6 +157,7 @@ App.Store = (function () {
       setup.scenes.push(scene);
       setup.activeSceneId = scene.id;
       selectedPropId = null;
+      selectedCameraId = null;
       this.touch();
       return scene;
     },
@@ -122,17 +174,24 @@ App.Store = (function () {
       setup.scenes.splice(idx, 1);
       if (setup.activeSceneId === id) setup.activeSceneId = setup.scenes[Math.max(0, idx - 1)].id;
       selectedPropId = null;
+      selectedCameraId = null;
       this.touch();
     },
 
     getSelectedPropId() { return selectedPropId; },
-    selectProp(id) { selectedPropId = id; emit(); },
+    // Selecting a prop/camera clears the other -- one Inspector panel, one
+    // Motive Capture panel, always showing at most one selected item.
+    selectProp(id) { selectedPropId = id; if (id) selectedCameraId = null; emit(); },
     getSelectedProp() { return currentScene().props.find(p => p.id === selectedPropId) || null; },
+
+    getSelectedCameraId() { return selectedCameraId; },
+    selectCamera(id) { selectedCameraId = id; if (id) selectedPropId = null; emit(); },
+    getSelectedCamera() { return currentScene().cameras.find(c => c.id === selectedCameraId) || null; },
 
     getTool() { return tool; },
     setTool(t) { tool = t; emit(); },
 
-    addProp(prop) { currentScene().props.push(prop); selectedPropId = prop.id; this.touch(); },
+    addProp(prop) { currentScene().props.push(prop); selectedPropId = prop.id; selectedCameraId = null; this.touch(); },
     removeProp(id) {
       const scene = currentScene();
       scene.props = scene.props.filter(p => p.id !== id);
@@ -143,6 +202,21 @@ App.Store = (function () {
       const p = currentScene().props.find(p => p.id === id);
       if (!p) return;
       Object.assign(p, patch);
+      this.touch();
+    },
+
+    getCameras() { return currentScene().cameras; },
+    addCamera(camera) { currentScene().cameras.push(camera); selectedCameraId = camera.id; selectedPropId = null; this.touch(); },
+    removeCamera(id) {
+      const scene = currentScene();
+      scene.cameras = scene.cameras.filter(c => c.id !== id);
+      if (selectedCameraId === id) selectedCameraId = null;
+      this.touch();
+    },
+    updateCamera(id, patch) {
+      const c = currentScene().cameras.find(c => c.id === id);
+      if (!c) return;
+      Object.assign(c, patch);
       this.touch();
     },
 
@@ -162,6 +236,19 @@ App.Store = (function () {
       const p = currentScene().props.find(p => p.id === propId);
       if (!p) return;
       p.measuredPoints[pointKey] = null;
+      this.touch();
+    },
+
+    updateMeasuredCameraMarker(cameraId, markerKey, patch) {
+      const c = currentScene().cameras.find(c => c.id === cameraId);
+      if (!c) return;
+      c.measuredMarkers[markerKey] = Object.assign({}, c.measuredMarkers[markerKey], patch);
+      this.touch();
+    },
+    clearMeasuredCameraMarker(cameraId, markerKey) {
+      const c = currentScene().cameras.find(c => c.id === cameraId);
+      if (!c) return;
+      c.measuredMarkers[markerKey] = null;
       this.touch();
     },
 
@@ -185,6 +272,32 @@ App.Store = (function () {
       p.rotationDeg = Math.round(result.rotationDeg * 10) / 10;
       p.positionSource = 'measured';
       p.lastSolve = result;
+      this.touch();
+      return result;
+    },
+
+    // Same idea as solvePropTransform: each of the camera's 3 markers has a
+    // known fixed local offset (App.cameraLocalMarkers, from the physical
+    // rig's measured marker spacing). 1 captured marker only translates
+    // (rotation kept as-is); 2-3 solve rotation + translation via the same
+    // least-squares Procrustes fit (js/rigidFit.js).
+    solveCameraTransform(cameraId) {
+      const c = currentScene().cameras.find(c => c.id === cameraId);
+      if (!c) return null;
+      const correspondences = [];
+      App.CAMERA_POINTS.forEach(({ key }) => {
+        const mp = c.measuredMarkers[key];
+        if (mp && mp.world) {
+          correspondences.push({ local: App.cameraLocalMarkers[key], world: { x: mp.world.x, y: mp.world.y } });
+        }
+      });
+      const result = App.rigidFit.solve(correspondences, c.rotationDeg);
+      if (!result) return null;
+      c.x = Math.round(result.x * 1000) / 1000;
+      c.y = Math.round(result.y * 1000) / 1000;
+      c.rotationDeg = Math.round(result.rotationDeg * 10) / 10;
+      c.positionSource = 'measured';
+      c.lastSolve = result;
       this.touch();
       return result;
     }

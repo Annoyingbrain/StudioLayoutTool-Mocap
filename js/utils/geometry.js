@@ -135,5 +135,28 @@ App.geometry = {
   rotationHandlePos(prop) {
     const handleOffsetM = prop.depthM / 2 + 0.5;
     return this.rotatePoint(prop.x, prop.y + handleOffsetM, prop.x, prop.y, prop.rotationDeg);
+  },
+
+  // World-space position of one of a camera's 3 tracked markers
+  // ('back'/'left'/'right'), from its fixed local rig geometry
+  // (App.cameraLocalMarkers) rotated/translated by the camera's current x/y/rotationDeg.
+  cameraMarkerWorldPosition(camera, markerKey) {
+    const local = App.cameraLocalMarkers[markerKey];
+    return this.rotatePoint(camera.x + local.x, camera.y + local.y, camera.x, camera.y, camera.rotationDeg);
+  },
+
+  // World-space position of a camera's rotation handle -- same "local +Y,
+  // fixed distance past the shape" convention as rotationHandlePos.
+  cameraRotationHandlePos(camera) {
+    const handleOffsetM = 0.6;
+    return this.rotatePoint(camera.x, camera.y + handleOffsetM, camera.x, camera.y, camera.rotationDeg);
+  },
+
+  // A camera's on-canvas/on-export icon: a small forward-pointing wedge
+  // (local coordinates, apex = lens direction), distinct from prop shapes --
+  // shared between js/canvas.js and js/floorPngExport.js.
+  CAMERA_SHAPE_LOCAL: [{ x: 0, y: 0.35 }, { x: 0.15, y: -0.15 }, { x: -0.15, y: -0.15 }],
+  cameraShapeWorldPoints(camera) {
+    return this.CAMERA_SHAPE_LOCAL.map(p => this.rotatePoint(camera.x + p.x, camera.y + p.y, camera.x, camera.y, camera.rotationDeg));
   }
 };

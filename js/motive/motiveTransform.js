@@ -37,6 +37,15 @@ App.motiveTransform = {
   rotationDeg: -0.4867, // small correction between Motive's calibration and the mesh-derived floor plan
   translate: { x: 5.7180, y: -3.5519 }, // app-world meters, applied after rotation
 
+  // Motive's raw Y reading (mm) for a marker sitting AT true floor level
+  // (Y=0 real-world) -- averaged from the Triangle (1cm elevation) and
+  // T-bar (4cm elevation) reference captures, which agreed to within 0.04mm
+  // once their own known elevations were subtracted out (see
+  // fixtures/verify_reference_trackers.py's up-axis sanity check). Lets any
+  // future raw Motive Y reading be converted straight to real height above
+  // the studio floor.
+  FLOOR_BASELINE_MM: 15.9676,
+
   // point: {x,y,z} in Motive world space, mm. Returns {x,y} in app-world meters.
   toAppWorld(point) {
     const local = {
@@ -49,5 +58,14 @@ App.motiveTransform = {
       x: this.translate.x + local.x * cos - local.y * sin,
       y: this.translate.y + local.x * sin + local.y * cos
     };
+  },
+
+  // rawYmm: a raw Motive Y reading (mm, the up-axis). standoffMm: how far
+  // above the resting surface the tracker's own markers sit (e.g. the
+  // Triangle reference tracker's markers are 1cm above whatever it's
+  // resting on -- pass 10 for that; 0 if the marker sits flush). Returns
+  // height above the studio floor in meters.
+  heightFromRawY(rawYmm, standoffMm) {
+    return (rawYmm - this.FLOOR_BASELINE_MM - (standoffMm || 0)) / 1000;
   }
 };

@@ -27,6 +27,8 @@ function migrateSetup(setup) {
   // Props saved before the circular-shape option existed have no `shape`
   // field -- default them to 'rect' so every prop has one explicitly.
   setup.scenes.forEach(scene => (scene.props || []).forEach(p => { if (!p.shape) p.shape = 'rect'; }));
+  // Scenes saved before cameras existed have no `cameras` array.
+  setup.scenes.forEach(scene => { if (!Array.isArray(scene.cameras)) scene.cameras = []; });
   return setup;
 }
 

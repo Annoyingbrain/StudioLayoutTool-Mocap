@@ -12,6 +12,16 @@ window.App = window.App || {};
 App.floorPngExport = (function () {
   const CANVAS_W = 2944, CANVAS_H = 2304; // Disguise's floor input resolution
   const CENTER_DOT_DIAMETER_M = 0.05;
+  const CAMERA_ICON_WIDTH_M = 0.5; // same real-world size as js/canvas.js's on-screen icon
+
+  // Same body icon as js/canvas.js (separate Image instance -- this module
+  // has no access to canvas.js's private one), recolored solid white via
+  // source-in compositing to match this export's white-silhouette-on-black
+  // convention (the source PNG is black-on-transparent).
+  const cameraIcon = new Image();
+  let cameraIconLoaded = false;
+  cameraIcon.onload = () => { cameraIconLoaded = true; };
+  cameraIcon.src = 'assets/icons/camera.png';
 
   // World (x,y) -> Disguise-space (x,y) -- same transform as
   // App.csvExport.toDisguiseSpace's position math, without the rotation
@@ -79,6 +89,56 @@ App.floorPngExport = (function () {
     ctx.restore();
   }
 
+  function drawCamera(ctx, toPx, scaleX, scaleY, camera) {
+    const centerPx = toPx(toDisguise(camera.x, camera.y));
+    const shapePx = App.geometry.cameraShapeWorldPoints(camera).map(p => toPx(toDisguise(p.x, p.y)));
+
+    ctx.save();
+    if (cameraIconLoaded) {
+      // Lens points along the icon's own +X (right) as drawn -- rotate to
+      // match the screen-space direction of the camera's local +Y (forward),
+      // found the same way js/canvas.js's drawCamera does: project a
+      // world-space forward point through this export's own toDisguise/toPx
+      // pipeline and take the angle to it.
+      const forwardWorld = App.geometry.rotatePoint(camera.x, camera.y + 0.3, camera.x, camera.y, camera.rotationDeg);
+      const forwardPx = toPx(toDisguise(forwardWorld.x, forwardWorld.y));
+      const angle = Math.atan2(forwardPx.y - centerPx.y, forwardPx.x - centerPx.x);
+      const w = CAMERA_ICON_WIDTH_M * ((scaleX + scaleY) / 2);
+      const h = w * (cameraIcon.naturalHeight / cameraIcon.naturalWidth);
+
+      ctx.translate(centerPx.x, centerPx.y);
+      ctx.rotate(angle);
+      ctx.drawImage(cameraIcon, -w / 2, -h / 2, w, h);
+      ctx.globalCompositeOperation = 'source-in';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+    } else {
+      ctx.beginPath();
+      shapePx.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+      ctx.closePath();
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = '#ff0000';
+    ctx.beginPath();
+    const dotR = (CENTER_DOT_DIAMETER_M / 2) * (scaleX + scaleY) / 2;
+    ctx.arc(centerPx.x, centerPx.y, dotR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    const bottomPx = Math.max(...shapePx.map(p => p.y));
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 30px Segoe UI, Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(camera.name, centerPx.x, bottomPx + 10);
+    ctx.restore();
+  }
+
   function buildCanvas(setup, scene) {
     const canvas = document.createElement('canvas');
     canvas.width = CANVAS_W;
@@ -99,6 +159,7 @@ App.floorPngExport = (function () {
     });
 
     scene.props.forEach(p => drawProp(ctx, toPx, scaleX, scaleY, p));
+    scene.cameras.forEach(c => drawCamera(ctx, toPx, scaleX, scaleY, c));
 
     ctx.save();
     ctx.fillStyle = '#ffffff';
@@ -190,7 +251,7 @@ App.floorPngExport = (function () {
     buildTestPointsCanvas,
 
     exportSetup(setup, scene) {
-      if (!scene.props.length) { App.toast('No props to export yet.', true); return; }
+      if (!scene.props.length && !scene.cameras.length) { App.toast('No props or cameras to export yet.', true); return; }
       const canvas = buildCanvas(setup, scene);
       canvas.toBlob(blob => {
         if (!blob) { App.toast('Could not generate PNG.', true); return; }

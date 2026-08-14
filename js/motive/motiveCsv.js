@@ -72,10 +72,25 @@ App.motiveCsv = (function () {
   }
 
   return {
-    // text: raw CSV file content. Returns null (with a console warning) if
-    // it doesn't look like a Motive rigid-body export at all -- the caller
-    // decides how to surface that to the user.
-    parse(text) {
+    // Every distinct Rigid Body asset name found in a Motive export -- lets
+    // a caller discover what's in a multi-object take (e.g. a camera and a
+    // prop captured in the same recording) before deciding which to parse().
+    listRigidBodyNames(text) {
+      const rawLines = text.split(/\r\n|\r|\n/);
+      if (rawLines.length < 4) return [];
+      const typeRow = splitCsvLine(rawLines[2]);
+      const nameRow = splitCsvLine(rawLines[3]);
+      const groups = groupColumns(typeRow, nameRow);
+      return groups.filter(g => g.type === 'Rigid Body' && g.count === 7).map(g => g.name);
+    },
+
+    // text: raw CSV file content. assetName: which Rigid Body to parse, for
+    // a take with more than one tracked object (e.g. a camera and a prop
+    // captured together) -- defaults to whichever appears first in the file
+    // (correct for the common single-object case). Returns null (with a
+    // console warning) if it doesn't look like a Motive rigid-body export at
+    // all -- the caller decides how to surface that to the user.
+    parse(text, assetName) {
       const rawLines = text.split(/\r\n|\r|\n/);
       while (rawLines.length && rawLines[rawLines.length - 1] === '') rawLines.pop();
       if (rawLines.length < 9) { console.warn('[motiveCsv] file too short to be a Motive export'); return null; }
@@ -89,20 +104,27 @@ App.motiveCsv = (function () {
       const nameRow = splitCsvLine(rawLines[3]);
       const groups = groupColumns(typeRow, nameRow);
 
-      const rbGroup = groups.find(g => g.type === 'Rigid Body' && g.count === 7);
+      const rbGroup = assetName
+        ? groups.find(g => g.type === 'Rigid Body' && g.count === 7 && g.name === assetName)
+        : groups.find(g => g.type === 'Rigid Body' && g.count === 7);
       const allMarkerGroups = groups.filter(g => g.type === 'Marker' && g.count === 3);
-      // Only the primary Rigid Body's own markers matter for capture math --
-      // a real take often has other tracked objects or stray "Unlabeled"
-      // reflections in view too, and those shouldn't cause an otherwise-good
-      // frame (this asset fully tracked) to be dropped by the isValidXYZ
-      // check below just because something unrelated had a dropout.
+      // Only the selected Rigid Body's own markers matter for capture math --
+      // a take often has other tracked objects (a different asset entirely,
+      // not just stray "Unlabeled" reflections -- see assetName above) in
+      // view too, and those shouldn't cause an otherwise-good frame (this
+      // asset fully tracked) to be dropped by the isValidXYZ check below
+      // just because something unrelated had a dropout.
       const markerGroups = rbGroup
         ? allMarkerGroups.filter(g => g.name === rbGroup.name || g.name.startsWith(rbGroup.name + ':'))
         : allMarkerGroups;
-      const rbMarkerGroups = groups.filter(g => g.type === 'Rigid Body Marker' && g.count === 3);
+      const rbMarkerGroups = rbGroup
+        ? groups.filter(g => g.type === 'Rigid Body Marker' && g.count === 3 && (g.name === rbGroup.name || g.name.startsWith(rbGroup.name + ':')))
+        : groups.filter(g => g.type === 'Rigid Body Marker' && g.count === 3);
 
-      if (!rbGroup) console.warn('[motiveCsv] no 7-column Rigid Body group found (rotation quat + position)');
-      if (markerGroups.length < 4) console.warn(`[motiveCsv] expected >=4 raw Markers, found ${markerGroups.length}`);
+      if (!rbGroup) console.warn(assetName
+        ? `[motiveCsv] no Rigid Body named "${assetName}" found`
+        : '[motiveCsv] no 7-column Rigid Body group found (rotation quat + position)');
+      if (markerGroups.length < 4 && rbGroup) console.warn(`[motiveCsv] expected >=4 raw Markers, found ${markerGroups.length}`);
 
       const frames = [];
       for (let i = 8; i < rawLines.length; i++) {

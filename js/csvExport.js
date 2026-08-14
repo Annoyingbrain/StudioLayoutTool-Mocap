@@ -3,7 +3,7 @@
 window.App = window.App || {};
 
 App.csvExport = {
-  HEADER: ['Name', 'PosX', 'PosY', 'PosZ', 'RotZ', 'WidthM', 'DepthM', 'HeightM', 'Notes'],
+  HEADER: ['Type', 'Name', 'PosX', 'PosY', 'PosZ', 'RotZ', 'WidthM', 'DepthM', 'HeightM', 'Notes'],
 
   // Disguise's (0,0) -- where its tracked camera always starts -- is the studio
   // floor's near corner, not this app's internal world origin. Disguise's
@@ -47,17 +47,24 @@ App.csvExport = {
     scene.props.forEach(p => {
       const d = this.toDisguiseSpace(p);
       rows.push([
-        p.name, d.x, d.y, 0, d.rotZ,
+        'Prop', p.name, d.x, d.y, 0, d.rotZ,
         p.widthM, p.depthM, p.heightM, p.notes
+      ].map(v => this.csvEscape(v)).join(','));
+    });
+    scene.cameras.forEach(c => {
+      const d = this.toDisguiseSpace(c);
+      rows.push([
+        'Camera', c.name, d.x, d.y, 0, d.rotZ,
+        '', '', '', c.notes
       ].map(v => this.csvEscape(v)).join(','));
     });
     return rows.join('\r\n') + '\r\n';
   },
 
-  // Exports the given scene's props (not the whole setup) -- each scene is
-  // its own shot/layout and gets its own CSV.
+  // Exports the given scene's props and cameras (not the whole setup) --
+  // each scene is its own shot/layout and gets its own CSV.
   exportSetup(setup, scene) {
-    if (!scene.props.length) { App.toast('No props to export yet.', true); return; }
+    if (!scene.props.length && !scene.cameras.length) { App.toast('No props or cameras to export yet.', true); return; }
     const csv = this.buildCsv(scene);
     const blob = new Blob([csv], { type: 'text/csv' });
     const safeName = `${setup.name || 'setup'}_Position_${scene.name || '1'}`.replace(/[^a-z0-9_\-]+/gi, '_');

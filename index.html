@@ -55,11 +55,17 @@
         <div id="prop-list"></div>
       </section>
 
+      <section class="panel" id="camera-list-panel">
+        <h3>Cameras <span id="camera-count" class="muted"></span></h3>
+        <div id="camera-list"></div>
+      </section>
+
       <section class="panel">
         <h3>Tools</h3>
         <div class="tool-row">
           <button id="tool-select" class="tool-btn active" data-tool="select">Select / Move</button>
           <button id="tool-add-prop" class="tool-btn" data-tool="add-prop">+ Add Prop</button>
+          <button id="tool-add-camera" class="tool-btn" data-tool="add-camera">+ Add Camera</button>
         </div>
         <div class="tool-row">
           <label class="chk"><input type="checkbox" id="chk-grid" checked> Show grid</label>
@@ -154,6 +160,43 @@
           <div id="points-status"></div>
           <button id="btn-solve-object" disabled>Solve Object Position &amp; Rotation</button>
           <p class="hint">Capture at least 2 points (e.g. two corners, or a corner + center) to solve both position and rotation. A single point can only reposition the prop — its current rotation is kept.</p>
+
+          <div class="subheading">Reference tracker (position + height)</div>
+          <p class="hint">Instead of touching a point with the wand: place a 3-marker reference tracker (e.g. the Triangle probe) flat on top of the prop and load its CSV here. Sets X/Y from its centroid and Height from Motive's Y (up-axis) reading — rotation is left as-is.</p>
+          <label class="file-btn block">Load reference tracker CSV<input id="ref-tracker-csv-input" type="file" accept=".csv"></label>
+          <div id="ref-tracker-result" class="small"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="camera-inspector-panel">
+        <h3>Camera Inspector</h3>
+        <div id="camera-inspector-empty" class="muted small">Select a camera to edit its properties.</div>
+        <div id="camera-inspector-fields" class="hidden">
+          <label>Name <input id="cam-insp-name" type="text"></label>
+          <div class="two-col">
+            <label>X (m) <input id="cam-insp-x" type="number" step="0.001"></label>
+            <label>Y (m) <input id="cam-insp-y" type="number" step="0.001"></label>
+          </div>
+          <label>Rotation (deg) <input id="cam-insp-rot" type="number" step="1"></label>
+          <label>Color <input id="cam-insp-color" type="color" value="#4da6ff"></label>
+          <label>Notes <textarea id="cam-insp-notes" rows="2"></textarea></label>
+          <div class="position-source small muted" id="cam-insp-position-source"></div>
+          <button id="btn-delete-camera" class="danger">Delete Camera</button>
+        </div>
+      </section>
+
+      <section class="panel" id="camera-motive-panel">
+        <h3>Camera Motive Capture</h3>
+        <div id="camera-motive-empty" class="muted small">Select a camera to capture its position from Motive.</div>
+        <div id="camera-motive-fields" class="hidden">
+          <p class="hint">The camera's 3 rig markers (back/left/right) are one rigid body -- load a single Motive CSV capture of the camera at this position and all 3 are captured and solved together.</p>
+          <label class="file-btn block">Load Motive CSV for this camera<input id="camera-motive-csv-input" type="file" accept=".csv"></label>
+          <div id="camera-capture-result" class="small"></div>
+          <div id="camera-markers-status"></div>
+
+          <div class="subheading">Dolly move (trail)</div>
+          <p class="hint">Load a full dolly-move recording (thousands of frames) to draw the camera's path on the floor plan. A visualization only -- not solved/editable like the position above.</p>
+          <label class="file-btn block">Load dolly track CSV<input id="camera-track-csv-input" type="file" accept=".csv"></label>
         </div>
       </section>
 
@@ -180,6 +223,7 @@
 <script src="js/reportExport.js"></script>
 <script src="js/ui/sidebar.js"></script>
 <script src="js/ui/motiveCapture.js"></script>
+<script src="js/ui/cameraCapture.js"></script>
 <script src="js/ui/githubSync.js"></script>
 <script src="js/ui/toolbar.js"></script>
 <script src="js/main.js"></script>

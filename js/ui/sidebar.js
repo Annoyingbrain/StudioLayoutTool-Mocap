@@ -1,4 +1,4 @@
-// Prop list + prop inspector panel.
+// Prop list + prop inspector panel, and camera list + camera inspector panel.
 window.App = window.App || {};
 
 (function () {
@@ -167,11 +167,88 @@ window.App = window.App || {};
     });
   }
 
+  function renderCameraList() {
+    const scene = App.Store.getScene();
+    const selectedId = App.Store.getSelectedCameraId();
+    const list = dom.qs('#camera-list');
+    dom.qs('#camera-count').textContent = `(${scene.cameras.length})`;
+    dom.clear(list);
+
+    scene.cameras.forEach(c => {
+      const row = dom.el('div', {
+        class: 'prop-row' + (c.id === selectedId ? ' selected' : ''),
+        onclick: () => App.Store.selectCamera(c.id)
+      }, [
+        dom.el('span', { class: 'swatch', style: `background:${c.color}` }),
+        dom.el('span', { class: 'prop-row-name', text: c.name }),
+        dom.el('span', {
+          class: 'prop-row-src' + (c.positionSource === 'measured' ? ' measured' : ''),
+          text: c.positionSource === 'measured' ? 'measured' : 'manual'
+        })
+      ]);
+      list.appendChild(row);
+    });
+  }
+
+  function renderCameraInspector() {
+    const camera = App.Store.getSelectedCamera();
+    const empty = dom.qs('#camera-inspector-empty'), fields = dom.qs('#camera-inspector-fields');
+    if (!camera) { empty.classList.remove('hidden'); fields.classList.add('hidden'); return; }
+    empty.classList.add('hidden'); fields.classList.remove('hidden');
+
+    setVal('#cam-insp-name', camera.name);
+    setVal('#cam-insp-x', camera.x);
+    setVal('#cam-insp-y', camera.y);
+    setVal('#cam-insp-rot', camera.rotationDeg);
+    setVal('#cam-insp-color', camera.color);
+    setVal('#cam-insp-notes', camera.notes);
+
+    const src = dom.qs('#cam-insp-position-source');
+    if (camera.positionSource === 'measured' && camera.lastSolve) {
+      const s = camera.lastSolve;
+      src.textContent = s.pointCount === 1
+        ? `Position from measurement (1 marker, rotation kept as-is)`
+        : `Position + rotation from measurement (${s.pointCount} markers, fit residual ${s.fitRms.toFixed(3)} m)`;
+    } else {
+      src.textContent = 'Position set manually on canvas';
+    }
+  }
+
+  function bindCameraInspector() {
+    const bind = (sel, field, parse) => {
+      dom.qs(sel).addEventListener('input', e => {
+        const camera = App.Store.getSelectedCamera();
+        if (!camera) return;
+        const v = parse ? parse(e.target.value) : e.target.value;
+        const patch = { [field]: v };
+        if (['x', 'y', 'rotationDeg'].includes(field)) patch.positionSource = 'manual';
+        App.Store.updateCamera(camera.id, patch);
+      });
+    };
+    bind('#cam-insp-name', 'name');
+    bind('#cam-insp-x', 'x', parseFloat);
+    bind('#cam-insp-y', 'y', parseFloat);
+    bind('#cam-insp-rot', 'rotationDeg', parseFloat);
+    bind('#cam-insp-color', 'color');
+    bind('#cam-insp-notes', 'notes');
+
+    dom.qs('#btn-delete-camera').addEventListener('click', () => {
+      const camera = App.Store.getSelectedCamera();
+      if (!camera) return;
+      if (confirm(`Delete "${camera.name}"?`)) App.Store.removeCamera(camera.id);
+    });
+  }
+
   App.sidebar = {
     init() {
       bindInspector();
-      App.Store.subscribe(() => { renderPropList(); renderPropPicker(); renderInspector(); });
+      bindCameraInspector();
+      App.Store.subscribe(() => {
+        renderPropList(); renderPropPicker(); renderInspector();
+        renderCameraList(); renderCameraInspector();
+      });
       renderPropList(); renderPropPicker(); renderInspector();
+      renderCameraList(); renderCameraInspector();
     }
   };
 })();
