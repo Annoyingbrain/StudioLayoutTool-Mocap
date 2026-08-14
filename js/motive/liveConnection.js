@@ -18,6 +18,11 @@ window.App = window.App || {};
     try { msg = JSON.parse(event.data); } catch (e) { return; }
     if (msg && msg.type === 'frame' && Array.isArray(msg.rigidBodies)) {
       App.liveTracking.handleFrame(msg.rigidBodies);
+    } else if (msg && msg.type === 'status') {
+      // The bridge reporting whether Motive is actually sending data. The
+      // WebSocket staying up says nothing about that -- Motive can stop
+      // streaming (Edit mode) while this connection is perfectly healthy.
+      App.liveTracking.setMotiveStreaming(!!msg.motiveStreaming);
     }
   }
 

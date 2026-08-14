@@ -19,6 +19,14 @@ window.App = window.App || {};
     el.textContent = labels[status] || status;
     el.className = 'small ' + (status === 'connected' ? 'err-ok' : (status === 'error' ? 'err-bad' : 'muted'));
     if (status === 'error' && App.liveConnection.getLastError()) el.textContent += ` — ${App.liveConnection.getLastError()}`;
+    // Connected to the bridge is not the same as Motive actually streaming
+    // -- say which, so a Motive-side pause (Edit mode) doesn't look like the
+    // app being broken.
+    if (status === 'connected') {
+      el.textContent += App.liveTracking.isMotiveStreaming()
+        ? ' — Motive streaming'
+        : ' — waiting for Motive (not streaming; in Edit mode?)';
+    }
     dom.qs('#btn-live-connect').disabled = status === 'connected' || status === 'connecting';
     dom.qs('#btn-live-disconnect').disabled = status === 'disconnected';
   }
@@ -54,7 +62,7 @@ window.App = window.App || {};
     const assignments = JSON.stringify(App.liveTracking.getAssignments());
     const entities = App.Store.getCameras().map(c => `c${c.id}:${c.name}`)
       .concat(App.Store.getScene().props.map(p => `p${p.id}:${p.name}`)).join('|');
-    return `${names}##${assignments}##${entities}##${App.liveConnection.isConnected()}`;
+    return `${names}##${assignments}##${entities}##${App.liveConnection.isConnected()}##${App.liveTracking.isMotiveStreaming()}`;
   }
 
   const statusElByName = {};

@@ -37,6 +37,10 @@ window.App = window.App || {};
   const APPLY_INTERVAL_MS = 33;
   let lastApplyMs = 0;
 
+  // Whether server.py says Motive is actually sending frames -- see
+  // setMotiveStreaming.
+  let motiveStreaming = false;
+
   function emit() { listeners.forEach(fn => fn()); }
 
   // Rotates local +Y (0,1,0) by a unit quaternion (x,y,z,w) -- see
@@ -129,9 +133,25 @@ window.App = window.App || {};
       emit();
     },
 
+    // Whether Motive is currently sending data, as reported by server.py.
+    // Distinct from the WebSocket being connected: Motive can stop
+    // streaming (switched to Edit mode) while the bridge connection is
+    // perfectly healthy, and the UI shouldn't claim things are still being
+    // tracked in that case.
+    isMotiveStreaming() { return motiveStreaming; },
+    setMotiveStreaming(streaming) {
+      if (motiveStreaming === streaming) return;
+      motiveStreaming = streaming;
+      // Nothing is being tracked while the stream is down -- drop the stale
+      // positions rather than leaving them looking live.
+      if (!streaming) Object.keys(latestByName).forEach(n => { latestByName[n].tracking = false; });
+      emit();
+    },
+
     // Called on disconnect so stale "tracking" status doesn't linger in the UI.
     reset() {
       latestByName = {};
+      motiveStreaming = false;
       emit();
     }
   };

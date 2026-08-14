@@ -43,6 +43,15 @@ ROOT = Path(__file__).resolve().parent
 # picked up. Cheap request, no need to do it every frame.
 DESCRIPTIONS_REFRESH_SEC = 5.0
 
+# A pause in the stream (Motive switched to Edit mode, say) is normal and is
+# waited out without touching the connection. Past this much silence, assume
+# the connection itself may be stale -- Motive can drop a client's
+# registration rather than merely pausing -- and rebuild it.
+STREAM_IDLE_RECONNECT_SEC = 10.0
+
+# Backoff between connection attempts, and after a stream is torn down.
+RECONNECT_DELAY_SEC = 3.0
+
 
 def broadcast(ws_server, message):
     """Send to every connected browser.
@@ -79,17 +88,7 @@ def natnet_loop(client, ws_server, stop_event, units_to_mm):
         except Exception as e:
             print(f"[natnet] couldn't refresh rigid body names: {e}", file=sys.stderr)
 
-    refresh_names()
-    last_refresh = time.time()
-
-    for mocap in client.MoCap(timeout=1.0):
-        if stop_event.is_set():
-            break
-        now = time.time()
-        if now - last_refresh > DESCRIPTIONS_REFRESH_SEC:
-            refresh_names()
-            last_refresh = now
-
+    def send_frame(mocap):
         rigid_bodies = [
             {
                 "id": rb.identifier,
@@ -107,12 +106,49 @@ def natnet_loop(client, ws_server, stop_event, units_to_mm):
             }
             for rb in mocap.rigid_body_data.rigid_bodies
         ]
-        message = json.dumps({
+        broadcast(ws_server, json.dumps({
             "type": "frame",
             "frameNumber": mocap.prefix_data.frame_number,
             "rigidBodies": rigid_bodies,
-        })
-        broadcast(ws_server, message)
+        }))
+
+    refresh_names()
+    last_refresh = time.time()
+    last_frame = time.time()
+    streaming = True
+
+    # client.MoCap() is a generator that ENDS as soon as no frame arrives
+    # within its timeout -- which happens routinely, e.g. every time Motive
+    # is switched from Live to Edit mode. Letting that end this function
+    # would tear the NatNet client down for good (the caller shuts it down
+    # on return), which is why a Live->Edit->Live round trip used to kill
+    # tracking until server.py was restarted. So a gap must not escape this
+    # loop: re-enter the generator and keep waiting. Only a prolonged
+    # silence returns, letting the caller rebuild the connection in case
+    # Motive dropped this client entirely rather than just pausing.
+    while not stop_event.is_set():
+        for mocap in client.MoCap(timeout=1.0):
+            if stop_event.is_set():
+                return
+            last_frame = time.time()
+            if not streaming:
+                streaming = True
+                print("[natnet] frames resumed", file=sys.stderr)
+                broadcast(ws_server, json.dumps({"type": "status", "motiveStreaming": True}))
+            if time.time() - last_refresh > DESCRIPTIONS_REFRESH_SEC:
+                refresh_names()
+                last_refresh = time.time()
+            send_frame(mocap)
+
+        if stop_event.is_set():
+            return
+        if streaming:
+            streaming = False
+            print("[natnet] frames stopped -- Motive not streaming (Edit mode?), still connected and waiting", file=sys.stderr)
+            broadcast(ws_server, json.dumps({"type": "status", "motiveStreaming": False}))
+        if time.time() - last_frame > STREAM_IDLE_RECONNECT_SEC:
+            print(f"[natnet] no frames for {STREAM_IDLE_RECONNECT_SEC:.0f}s -- rebuilding the connection", file=sys.stderr)
+            return
 
 
 # NatNetClient.connect(timeout=...) doesn't reliably bound how long it can
@@ -172,29 +208,49 @@ def connect_with_hard_timeout(client, soft_timeout):
 
 
 def connect_and_stream(natnet_params, ws_server, stop_event, units_to_mm):
-    print(
-        f"[natnet] attempting to connect to Motive at {natnet_params.server_address}:"
-        f"{natnet_params.command_port} (multicast={natnet_params.use_multicast}, "
-        f"local_interface={natnet_params.local_ip_address})...",
-        file=sys.stderr,
-    )
-    client = NatNetClient(natnet_params)
-    connected = connect_with_hard_timeout(client, natnet_params.connection_timeout or 5.0)
-    if not connected:
+    """Keeps a Motive connection alive for as long as the server runs.
+
+    Deliberately a retry loop rather than a single attempt: Motive going
+    away (Edit mode, a restart, a dropped client registration) must not
+    permanently kill live tracking -- it used to require restarting this
+    whole script. Nothing here ever gives up while the server is running.
+    """
+    while not stop_event.is_set():
         print(
-            f"Could not connect to Motive at {natnet_params.server_address}:{natnet_params.data_port} "
-            "-- the app will still load, but Live mode will have nothing to show. "
-            "Check Motive is running with streaming enabled, and --server-address/--use-multicast "
-            "match its Streaming settings.",
+            f"[natnet] attempting to connect to Motive at {natnet_params.server_address}:"
+            f"{natnet_params.command_port} (multicast={natnet_params.use_multicast}, "
+            f"local_interface={natnet_params.local_ip_address})...",
             file=sys.stderr,
         )
-        return
+        client = NatNetClient(natnet_params)
+        connected = connect_with_hard_timeout(client, natnet_params.connection_timeout or 5.0)
 
-    print(f"Connected to Motive at {natnet_params.server_address} (units_to_mm={units_to_mm})")
-    try:
-        natnet_loop(client, ws_server, stop_event, units_to_mm)
-    finally:
-        client.shutdown()
+        if connected:
+            print(f"Connected to Motive at {natnet_params.server_address} (units_to_mm={units_to_mm})")
+            broadcast(ws_server, json.dumps({"type": "status", "motiveStreaming": True}))
+            try:
+                natnet_loop(client, ws_server, stop_event, units_to_mm)
+            finally:
+                # Already-disconnected clients raise here; nothing to salvage
+                # either way, and this must not stop the retry loop.
+                try:
+                    client.shutdown()
+                except Exception:
+                    pass
+        else:
+            print(
+                f"Could not connect to Motive at {natnet_params.server_address}:{natnet_params.data_port} "
+                "-- the app still loads, but Live mode has nothing to show. Check Motive is running with "
+                "streaming enabled, and that --server-address/--use-multicast match its Streaming settings. "
+                f"Retrying every {RECONNECT_DELAY_SEC:.0f}s.",
+                file=sys.stderr,
+            )
+
+        broadcast(ws_server, json.dumps({"type": "status", "motiveStreaming": False}))
+        # Event.wait() returns True the moment we're asked to stop, so a
+        # shutdown isn't delayed by this backoff.
+        if stop_event.wait(RECONNECT_DELAY_SEC):
+            return
 
 
 def ws_handler(websocket):
