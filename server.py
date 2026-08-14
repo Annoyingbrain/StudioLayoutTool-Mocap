@@ -76,8 +76,8 @@ def natnet_loop(client, ws_server, stop_event, units_to_mm):
                 "id": rb.identifier,
                 "name": name_by_id.get(rb.identifier, str(rb.identifier)),
                 "tracking": rb.tracking,
-                # Converted to millimeters here (via units_to_mm, queried
-                # once at startup) so the browser side can feed this straight
+                # Converted to millimeters here (via units_to_mm, the
+                # --units-to-mm flag) so the browser side can feed this straight
                 # into js/motive/motiveTransform.js unchanged -- that's
                 # calibrated against the CSV export pipeline, which is
                 # always millimeters (js/motive/motiveCsv.js), but NatNet's
