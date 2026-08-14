@@ -61,9 +61,8 @@ window.App = window.App || {};
 
   function newSetup() {
     if (!confirm('Start a new setup? Unsaved changes to the current one will be lost unless you saved/exported it.')) return;
-    const defaults = App.persistence.loadDefaultReferencePoints();
-    App.Store.setSetup(App.factories.newSetup('Untitled Setup', defaults || undefined));
-    App.canvas.fitToReferencePoints();
+    App.Store.setSetup(App.factories.newSetup('Untitled Setup'));
+    App.canvas.fitToStudioSketch();
   }
 
   function saveLocal() {
@@ -117,7 +116,7 @@ window.App = window.App || {};
       });
       dom.qs('#btn-new-scene').addEventListener('click', () => {
         const scene = App.Store.addScene(`Position ${App.Store.getScenes().length + 1}`);
-        App.canvas.fitToReferencePoints();
+        App.canvas.fitToStudioSketch();
         App.toast(`Added "${scene.name}".`);
       });
       dom.qs('#btn-delete-scene').addEventListener('click', () => {

@@ -7,6 +7,14 @@ window.App = window.App || {};
   const geo = App.geometry;
   const HANDLE_R = 6;
   const ROT_HANDLE_R = 7;
+  // The studio's real physical/Disguise floor center -- 4.5m out from the
+  // LED wall's "north point" (js/studioSketch.js's "Center" reference
+  // point), confirmed via the Triangle/T-bar reference-tracker captures
+  // (see js/motive/motiveTransform.js's calibration comment). Grid lines
+  // are drawn relative to this instead of the app's arbitrary mesh-export
+  // origin (0,0), so on-screen distances read directly against a real,
+  // known landmark.
+  const GRID_ORIGIN = { x: 5.975, y: -4.318 };
   const DIR_ARROW_LEN_M = 0.15; // how far past the prop's front edge the direction arrow extends
   const DIR_ARROW_HEAD_PX = 7;
 
@@ -17,7 +25,11 @@ window.App = window.App || {};
   const CAMERA_ICON_WIDTH_M = 0.5;
   const cameraIcon = new Image();
   let cameraIconLoaded = false;
-  cameraIcon.onload = () => { cameraIconLoaded = true; if (App.canvas) App.canvas.render(); };
+  // The image can finish loading (it's small/local, often cached) before
+  // App.canvas.init() has run and set up canvas/wrap -- render() would then
+  // throw reading wrap.clientWidth. `wrap` is only ever set inside init(),
+  // so it doubles as an "are we initialized yet" guard.
+  cameraIcon.onload = () => { cameraIconLoaded = true; if (wrap) render(); };
   cameraIcon.src = 'assets/icons/camera.png';
 
   let canvas, ctx, wrap;
@@ -71,9 +83,9 @@ window.App = window.App || {};
     const minY = Math.floor(Math.min(topLeft.y, bottomRight.y)) - 1;
     const maxY = Math.ceil(Math.max(topLeft.y, bottomRight.y)) + 1;
 
-    // Grid lines are spaced every 1m/5m from world (0,0) -- wherever the
-    // source mesh export happened to put its origin.
-    const cx = 0, cy = 0;
+    // Grid lines are spaced every 1m/5m from the studio's real floor center
+    // (GRID_ORIGIN), not the app's arbitrary mesh-export origin.
+    const cx = GRID_ORIGIN.x, cy = GRID_ORIGIN.y;
     const firstN_X = Math.ceil(minX - cx), lastN_X = Math.floor(maxX - cx);
     const firstN_Y = Math.ceil(minY - cy), lastN_Y = Math.floor(maxY - cy);
 
