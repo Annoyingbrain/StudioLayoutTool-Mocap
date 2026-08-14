@@ -109,7 +109,24 @@ App.Store = (function () {
       emit();
     },
     addScene(name) {
+      const from = currentScene();
       const scene = App.factories.newScene(name);
+      // Cameras carry over to a new position; props don't. A camera is
+      // studio hardware that exists for every shot -- it gets moved between
+      // positions, not removed -- so it has to stay selectable and stay
+      // assignable to a live rigid body. Props are dressed per position, so
+      // a new one starts empty.
+      //
+      // Each position keeps its own placement of those cameras (the copy
+      // starts where they were, and moves independently from there), but
+      // the id is deliberately preserved: live tracking assignments point at
+      // a camera id, so reusing it means tracking keeps driving the right
+      // camera across a position switch instead of silently going nowhere.
+      scene.cameras = from.cameras.map(c => Object.assign({}, c, {
+        // A recorded move belongs to the position it was recorded in.
+        trail: null,
+        trailEndpoints: null
+      }));
       setup.scenes.push(scene);
       setup.activeSceneId = scene.id;
       selectedPropId = null;
