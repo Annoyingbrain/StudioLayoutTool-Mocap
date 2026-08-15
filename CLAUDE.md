@@ -115,32 +115,67 @@ theorising about the connection — every connection bug so far failed
   the hard way. Keep that when editing — most of the comments here exist
   because the alternative cost hours.
 
+## Rotation convention
+
+**`rotationDeg = 0` means facing the LED wall** (local -Y in a prop/camera's
+own frame — see `js/utils/geometry.js`'s ROTATION CONVENTION note). Flipped
+2026-08-15 from the original "local +Y = front" (which read ±180° when
+manually pointed at the wall) to match how this studio's crew think about
+heading. Every place that turns a direction into/from `rotationDeg` — prop
+and camera drawing, the rotation-handle drag math, `csvExport.js`'s Disguise
+`RotZ`, live tracking's heading — had to change together, or the same stored
+number would mean different things depending which one touched it last. No
+saved setups existed yet when this changed, so nothing needed migrating; if
+that's no longer true, every stored `rotationDeg` needs +180 applied once.
+
 ## Calibration
 
 Position and height are verified against the real studio (see
 `js/motive/motiveTransform.js`'s header).
 
-**Live rotation/tilt: calibrated 2026-08-15** against the "Arrow" T-bar
-reference tracker — `App.motiveCalibration.liveForwardAxis = '-z'`,
-`liveRotationOffsetDeg = 0.5` (see that file's comments for the derivation).
-This is a property of *that asset's* local frame as Motive assigned it at
-creation time, not a general rule — a separately-created rigid body (e.g. a
-production camera asset, if built independently of this reference tracker)
-may need its own check.
+**Live rotation/tilt: calibrated 2026-08-15** against "Camera Tracker", the
+general-purpose production camera rigid body (3 markers: marker 1 forward,
+markers 2/3 right/left) — `App.motiveCalibration.liveForwardAxis = '+z'`,
+`liveRotationOffsetDeg = -9.6` (see that file's comments for the
+derivation). An earlier pass that same day against the "Arrow" T-bar
+reference tracker found different values (`'-z'`, `0.5`) — expected, since
+each is a *separately created* Motive asset with its own arbitrary local
+frame; the T-bar numbers are kept as a worked example, not a fallback. If
+Camera Tracker is ever deleted and recreated in Motive (not just renamed),
+both values need re-deriving.
 
 **A single static reading can't calibrate `liveForwardAxis` — you need
-motion.** `App.motiveCalibration.liveForwardAxis` says which of a rigid
-body's local axes points the way it faces, which Motive assigns arbitrarily
-per-asset at creation and can't be derived from a single frame. The trap:
-checking "does tilt read ≈0° while level" only rules out the near-vertical
-axis — it can't distinguish the true forward axis from the object's *other*
-horizontal (side/roll) axis, since both read ~0° at rest, and
-`liveRotationOffsetDeg` can make either one's static heading match a known
-target by coincidence. Only rotating the object through the motion you care
-about and watching which axis's tilt actually swings tells them apart
-(rotating an axis about itself leaves that axis unchanged, so the wrong one
-looks falsely stable even while genuinely moved). `motive_axis_calibrate.py`
-(repo root) automates this: it connects straight to the WebSocket bridge,
-records live frames while you move the tracker, and reports the tilt range
-for all six axis candidates from one capture instead of re-testing each
-through the Live Tracking panel's dropdown one at a time.
+motion, and a recorded capture's "biggest range" can ALSO mislead you.**
+`App.motiveCalibration.liveForwardAxis` says which of a rigid body's local
+axes points the way it faces, which Motive assigns arbitrarily per-asset at
+creation and can't be derived from a single frame. Two traps, both hit
+during Camera Tracker's first (wrong) calibration pass:
+
+1. Checking "does tilt read ≈0° while level" only rules out the
+   near-vertical axis — it can't distinguish the true forward axis from the
+   object's *other* horizontal (side/roll) axis, since both read ~0° at
+   rest, and `liveRotationOffsetDeg` can make either one's static heading
+   match a known target by coincidence.
+2. Picking whichever axis shows the widest tilt range across a *recorded*
+   capture isn't safe either, if the motion during that capture wasn't a
+   clean, bounded pitch. A real hand-held motion that overshoots the
+   natural ±90° range can make even the object's genuine UP axis trace a
+   wide swing (it has a fixed, non-flat relationship to the true forward
+   axis's own angle — see `motiveCalibration.js`'s "tent pattern" note —
+   so a wide range doesn't by itself prove an axis is forward).
+
+Both looked convincing enough from an automated capture (`'-y'`, wide
+range, small resulting offset) to ship, and were still wrong — caught only
+by live hands-on testing: flat and level, tilt was ~0 for `+x`/`-x`/`+z`/`-z`
+but **-89.5° for `+y`**; pointed straight up, `+y`'s tilt fell back to ~0
+(a "tent" — high at rest, low at the vertical extreme — the up axis's
+signature, not forward's) while `+z`/`-z` climbed to ±78°. The reliable
+procedure: (1) flat/level, tilt ~0 for candidates only rules out up; (2)
+pitch the object as far as you physically can and compare candidates
+directly *live* — true forward approaches ±90°, true side/roll stays
+small. `motive_axis_calibrate.py` (repo root) can still help narrow
+candidates from a capture (plain range/offset table, or `--gate-axis` once
+a reliable up/down axis is known to correctly classify flat-vs-pitched
+frames instead of each candidate circularly filtering itself) — but treat
+its output as a lead, not a final answer, without a live check like the one
+above.

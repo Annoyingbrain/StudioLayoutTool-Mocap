@@ -57,7 +57,7 @@ App.geometry = {
     const hw = prop.widthM / 2, hd = prop.depthM / 2;
     if (prop.shape === 'triangle') {
       return [
-        { x: 0, y: hd }, { x: -hw, y: -hd }, { x: hw, y: -hd }
+        { x: 0, y: -hd }, { x: -hw, y: hd }, { x: hw, y: hd }
       ];
     }
     return [
@@ -117,25 +117,39 @@ App.geometry = {
     return Math.hypot(x2 - x1, y2 - y1);
   },
 
-  // World-space position of the rotation handle (above the prop's top edge).
+  // World-space position of the rotation handle (past the prop's front
+  // edge). rotationDeg's "front" is local -Y -- see the ROTATION CONVENTION
+  // note below, near cameraShapeWorldPoints.
   rotationHandlePos(prop) {
     const handleOffsetM = prop.depthM / 2 + 0.5;
-    return this.rotatePoint(prop.x, prop.y + handleOffsetM, prop.x, prop.y, prop.rotationDeg);
+    return this.rotatePoint(prop.x, prop.y - handleOffsetM, prop.x, prop.y, prop.rotationDeg);
   },
 
   // World-space position of one of a camera's 3 tracked markers
 
-  // World-space position of a camera's rotation handle -- same "local +Y,
+  // World-space position of a camera's rotation handle -- same "local -Y,
   // fixed distance past the shape" convention as rotationHandlePos.
   cameraRotationHandlePos(camera) {
     const handleOffsetM = 0.6;
-    return this.rotatePoint(camera.x, camera.y + handleOffsetM, camera.x, camera.y, camera.rotationDeg);
+    return this.rotatePoint(camera.x, camera.y - handleOffsetM, camera.x, camera.y, camera.rotationDeg);
   },
 
+  // ROTATION CONVENTION: rotationDeg=0 means facing local -Y -- i.e. facing
+  // the LED wall (js/studioSketch.js's led_wall_curve/led_floor sit at
+  // negative app-Y). Chosen 2026-08-15 so a camera/prop pointed at the wall
+  // reads 0 rather than +/-180, matching how this studio's crew think about
+  // heading (facing the set = zero). Every place that draws or interprets a
+  // "forward" direction from rotationDeg -- this file's *HandlePos/
+  // CAMERA_SHAPE_LOCAL, js/canvas.js's drawDirectionArrow/
+  // drawCameraIconShape/the rotate-drag handler, js/motive/liveTracking.js's
+  // directionToRotationDeg, js/floorPngExport.js's drawCamera -- has to agree
+  // on this, or dragging vs. live-tracking vs. exporting would each mean
+  // something different by the same stored number.
+  //
   // A camera's on-canvas/on-export icon: a small forward-pointing wedge
   // (local coordinates, apex = lens direction), distinct from prop shapes --
   // shared between js/canvas.js and js/floorPngExport.js.
-  CAMERA_SHAPE_LOCAL: [{ x: 0, y: 0.35 }, { x: 0.15, y: -0.15 }, { x: -0.15, y: -0.15 }],
+  CAMERA_SHAPE_LOCAL: [{ x: 0, y: -0.35 }, { x: 0.15, y: 0.15 }, { x: -0.15, y: 0.15 }],
   cameraShapeWorldPoints(camera) {
     return this.CAMERA_SHAPE_LOCAL.map(p => this.rotatePoint(camera.x + p.x, camera.y + p.y, camera.x, camera.y, camera.rotationDeg));
   }

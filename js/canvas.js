@@ -19,9 +19,10 @@ window.App = window.App || {};
   const DIR_ARROW_HEAD_PX = 7;
 
   // Camera body icon: lens points along its own +X (right) in the source
-  // PNG, so it's drawn rotated to match the camera's local +Y (forward) --
-  // see drawCamera(). Rendered at a fixed real-world width, height scaled to
-  // match the image's own aspect ratio.
+  // PNG, so it's drawn rotated to match the camera's local -Y (forward --
+  // see js/utils/geometry.js's ROTATION CONVENTION note) -- see
+  // drawCameraIconShape(). Rendered at a fixed real-world width, height
+  // scaled to match the image's own aspect ratio.
   const CAMERA_ICON_WIDTH_M = 0.5;
   const cameraIcon = new Image();
   let cameraIconLoaded = false;
@@ -130,14 +131,15 @@ window.App = window.App || {};
     ctx.restore();
   }
 
-  // Small arrow past a rectangular prop's front edge (local +Y, the same
+  // Small arrow past a rectangular prop's front edge (local -Y, the same
   // "front" direction the rotation handle already uses -- see
-  // js/utils/geometry.js's rotationHandlePos), always visible so a prop's
-  // facing direction reads at a glance without having to select it.
+  // js/utils/geometry.js's ROTATION CONVENTION note / rotationHandlePos),
+  // always visible so a prop's facing direction reads at a glance without
+  // having to select it.
   function drawDirectionArrow(view, prop) {
     const hd = prop.depthM / 2;
-    const baseWorld = geo.rotatePoint(prop.x, prop.y + hd, prop.x, prop.y, prop.rotationDeg);
-    const tipWorld = geo.rotatePoint(prop.x, prop.y + hd + DIR_ARROW_LEN_M, prop.x, prop.y, prop.rotationDeg);
+    const baseWorld = geo.rotatePoint(prop.x, prop.y - hd, prop.x, prop.y, prop.rotationDeg);
+    const tipWorld = geo.rotatePoint(prop.x, prop.y - hd - DIR_ARROW_LEN_M, prop.x, prop.y, prop.rotationDeg);
     const base = geo.worldToScreen(view, baseWorld.x, baseWorld.y);
     const tip = geo.worldToScreen(view, tipWorld.x, tipWorld.y);
     const angle = Math.atan2(tip.y - base.y, tip.x - base.x);
@@ -261,12 +263,13 @@ window.App = window.App || {};
     }
     if (cameraIconLoaded) {
       // The icon's lens points along its own +X (right) as drawn -- rotate
-      // to match the screen-space direction of the position's local +Y
-      // (forward), found the same way drawDirectionArrow finds its angle:
-      // project a world-space forward point through worldToScreen and take
-      // the angle to it, so it's correct under the canvas's fixed 180-degree
-      // display rotation without duplicating that math here.
-      const forwardWorld = geo.rotatePoint(pos.x, pos.y + 0.3, pos.x, pos.y, pos.rotationDeg);
+      // to match the screen-space direction of the position's local -Y
+      // (forward -- see js/utils/geometry.js's ROTATION CONVENTION note),
+      // found the same way drawDirectionArrow finds its angle: project a
+      // world-space forward point through worldToScreen and take the angle
+      // to it, so it's correct under the canvas's fixed 180-degree display
+      // rotation without duplicating that math here.
+      const forwardWorld = geo.rotatePoint(pos.x, pos.y - 0.3, pos.x, pos.y, pos.rotationDeg);
       const forwardScreen = geo.worldToScreen(view, forwardWorld.x, forwardWorld.y);
       const screenAngle = Math.atan2(forwardScreen.y - center.y, forwardScreen.x - center.x);
       const w = CAMERA_ICON_WIDTH_M * view.scale;
@@ -582,7 +585,10 @@ window.App = window.App || {};
 
     if (dragState.kind === 'rotate') {
       const dx = world.x - dragState.center.x, dy = world.y - dragState.center.y;
-      let deg = Math.atan2(dy, dx) * 180 / Math.PI - 90;
+      // Inverse of rotatePoint((0,-handleOffset), rotationDeg) -- matches
+      // the rotation handle's local -Y "front" (see js/utils/geometry.js's
+      // ROTATION CONVENTION note).
+      let deg = Math.atan2(dx, -dy) * 180 / Math.PI;
       const patch = { rotationDeg: Math.round(deg * 10) / 10, positionSource: 'manual' };
       if (dragState.entity === 'camera') App.Store.updateCamera(dragState.entityId, patch);
       else App.Store.updateProp(dragState.entityId, patch);

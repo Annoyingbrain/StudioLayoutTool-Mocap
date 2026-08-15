@@ -113,11 +113,12 @@ App.floorPngExport = (function () {
     ctx.save();
     if (cameraIconLoaded) {
       // Lens points along the icon's own +X (right) as drawn -- rotate to
-      // match the screen-space direction of the camera's local +Y (forward),
-      // found the same way js/canvas.js's drawCamera does: project a
+      // match the screen-space direction of the camera's local -Y (forward
+      // -- see js/utils/geometry.js's ROTATION CONVENTION note), found the
+      // same way js/canvas.js's drawCameraIconShape does: project a
       // world-space forward point through this export's own toDisguise/toPx
       // pipeline and take the angle to it.
-      const forwardWorld = App.geometry.rotatePoint(camera.x, camera.y + 0.3, camera.x, camera.y, camera.rotationDeg);
+      const forwardWorld = App.geometry.rotatePoint(camera.x, camera.y - 0.3, camera.x, camera.y, camera.rotationDeg);
       const forwardPx = toPx(toDisguise(forwardWorld.x, forwardWorld.y));
       const angle = Math.atan2(forwardPx.y - centerPx.y, forwardPx.x - centerPx.x);
       const w = CAMERA_ICON_WIDTH_M * ((scaleX + scaleY) / 2);

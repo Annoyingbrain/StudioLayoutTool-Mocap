@@ -26,14 +26,23 @@ App.csvExport = {
 
   // Converts a prop's app-internal x/y/rotationDeg into Disguise's floor-plane
   // coordinate system: origin at DISGUISE_ORIGIN, axes negated (180 degree
-  // rotation), so RotZ gets a matching +180 degree offset to stay physically
-  // consistent with the rotated axes.
+  // rotation). RotZ previously needed a matching +180 degree offset here to
+  // stay physically consistent with those rotated axes -- but that offset
+  // was specifically relative to this app's OLD "local +Y = front"
+  // rotationDeg convention. 2026-08-15: the app switched to "local -Y =
+  // front" (js/utils/geometry.js's ROTATION CONVENTION note), which is
+  // itself a +180 shift for any given real-world facing, and the two +180s
+  // cancel -- so RotZ now needs no offset at all, just normalizing into
+  // [0,360). (Verified by substitution against the pre-existing, physically
+  // consistent mapping, not re-derived from Disguise's own axis convention
+  // from scratch -- if a real-world Disguise import ever looks rotated
+  // 180 degrees from expected, check here first.)
   toDisguiseSpace(prop) {
     const round3 = v => Math.round(v * 1000) / 1000;
     return {
       x: round3(this.DISGUISE_ORIGIN.x - prop.x),
       y: round3(this.DISGUISE_ORIGIN.y - prop.y),
-      rotZ: Math.round((((prop.rotationDeg + 180) % 360 + 360) % 360) * 10) / 10
+      rotZ: Math.round(((prop.rotationDeg % 360 + 360) % 360) * 10) / 10
     };
   },
 

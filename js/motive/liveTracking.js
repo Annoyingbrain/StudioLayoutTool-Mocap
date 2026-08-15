@@ -12,13 +12,13 @@
 //
 // Rotation: Motive solves each rigid body's own orientation quaternion
 // on-device, using whichever local axes were set when the rigid body asset
-// was created in Motive. This module assumes local +Y is "forward"
-// (matching the local-frame convention used elsewhere in this app, e.g.
-// prop corner offsets) and rotates that axis by the incoming quaternion,
-// but whether that assumption holds for a given Motive asset can only be
-// checked against real hardware -- App.motiveCalibration.
-// liveRotationOffsetDeg exists to correct for it once you can compare
-// against a known real heading.
+// was created in Motive -- which one counts as "forward" is per-asset and
+// configured in App.motiveCalibration.liveForwardAxis (see that file and
+// motive_axis_calibrate.py for how it's derived). The resulting direction is
+// then mapped to a rotationDeg using this app's OWN "local -Y = front"
+// convention (js/utils/geometry.js's ROTATION CONVENTION note) --
+// App.motiveCalibration.liveRotationOffsetDeg absorbs whatever fixed offset
+// is left once the axis is right.
 window.App = window.App || {};
 
 (function () {
@@ -54,7 +54,7 @@ window.App = window.App || {};
   // v' = v + 2 * qv x (qv x v + w*v), the standard quaternion-vector
   // rotation, so any axis works rather than just a hardcoded one.
   function rotateForwardAxis(q) {
-    const v = AXIS_VECTORS[App.motiveCalibration.liveForwardAxis] || AXIS_VECTORS['+y'];
+    const v = AXIS_VECTORS[App.motiveCalibration.liveForwardAxis] || AXIS_VECTORS['+z'];
     const tx = q.y * v.z - q.z * v.y + q.w * v.x;
     const ty = q.z * v.x - q.x * v.z + q.w * v.y;
     const tz = q.x * v.y - q.y * v.x + q.w * v.z;
@@ -65,10 +65,11 @@ window.App = window.App || {};
     };
   }
 
-  // Turns an app-world direction into a rotationDeg matching js/canvas.js's
-  // "local +Y = front" drawing convention.
+  // Turns an app-world direction into a rotationDeg matching
+  // js/utils/geometry.js's "local -Y = front" convention (rotationDeg=0
+  // means facing the LED wall).
   function directionToRotationDeg(dirApp) {
-    return Math.atan2(-dirApp.x, dirApp.y) * 180 / Math.PI;
+    return Math.atan2(dirApp.x, -dirApp.y) * 180 / Math.PI;
   }
 
   // Tilt is the elevation of the same forward axis the heading uses: how far
@@ -76,9 +77,9 @@ window.App = window.App || {};
   // up-axis (established by motiveTransform's floor-baseline calibration),
   // so the forward vector's Y component is its vertical part -- and since
   // rotateForwardAxis returns a unit vector, asin of that is the angle.
-  // Inherits the same unverified "local +Y is forward" assumption as the
-  // heading, so treat it as uncalibrated until checked against a real
-  // known tilt.
+  // Independent of which app-side axis counts as "front" (that only affects
+  // heading, via directionToRotationDeg above) -- tilt is calibrated per
+  // App.motiveCalibration.liveForwardAxis regardless.
   function forwardTiltDeg(forward) {
     return Math.asin(Math.max(-1, Math.min(1, forward.y))) * 180 / Math.PI;
   }
