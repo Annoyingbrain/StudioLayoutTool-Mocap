@@ -115,18 +115,32 @@ theorising about the connection — every connection bug so far failed
   the hard way. Keep that when editing — most of the comments here exist
   because the alternative cost hours.
 
-## Known-uncalibrated
+## Calibration
 
-**Live rotation and tilt are not trustworthy until the forward axis is set.**
-`App.motiveCalibration.liveForwardAxis` (Live Tracking panel) says which of
-a rigid body's local axes points the way it faces — fixed when the asset was
-created in Motive, so it can't be derived from the data.
+Position and height are verified against the real studio (see
+`js/motive/motiveTransform.js`'s header).
 
-The default `+y` is likely wrong: Motive is Y-up, so a body at identity has
-+Y pointing *straight up*, which makes the heading a projection of a
-near-vertical vector (unstable) and pins tilt near ±90°. **No rotation
-offset can fix that** — it's the wrong axis, not a constant error. Pick a
-horizontal axis until tilt reads ≈0° with the camera level and rotation is
-stable, *then* use `liveRotationOffsetDeg` for the leftover constant.
+**Live rotation/tilt: calibrated 2026-08-15** against the "Arrow" T-bar
+reference tracker — `App.motiveCalibration.liveForwardAxis = '-z'`,
+`liveRotationOffsetDeg = 0.5` (see that file's comments for the derivation).
+This is a property of *that asset's* local frame as Motive assigned it at
+creation time, not a general rule — a separately-created rigid body (e.g. a
+production camera asset, if built independently of this reference tracker)
+may need its own check.
 
-Position and height are already verified against the real studio.
+**A single static reading can't calibrate `liveForwardAxis` — you need
+motion.** `App.motiveCalibration.liveForwardAxis` says which of a rigid
+body's local axes points the way it faces, which Motive assigns arbitrarily
+per-asset at creation and can't be derived from a single frame. The trap:
+checking "does tilt read ≈0° while level" only rules out the near-vertical
+axis — it can't distinguish the true forward axis from the object's *other*
+horizontal (side/roll) axis, since both read ~0° at rest, and
+`liveRotationOffsetDeg` can make either one's static heading match a known
+target by coincidence. Only rotating the object through the motion you care
+about and watching which axis's tilt actually swings tells them apart
+(rotating an axis about itself leaves that axis unchanged, so the wrong one
+looks falsely stable even while genuinely moved). `motive_axis_calibrate.py`
+(repo root) automates this: it connects straight to the WebSocket bridge,
+records live frames while you move the tracker, and reports the tilt range
+for all six axis candidates from one capture instead of re-testing each
+through the Live Tracking panel's dropdown one at a time.
