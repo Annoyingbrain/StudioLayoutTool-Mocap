@@ -9,9 +9,15 @@ App.motiveCalibration = {
   // "forward" is whatever axis was chosen when the rigid body asset was
   // created in Motive -- NOT something this app can know or derive from
   // tracking data alone. This offset corrects the app-world
-  // rotation computed from that quaternion to match reality. To recalibrate:
-  // point the tracked object at a known heading, then adjust this until the
-  // live-updated rotation on screen matches (or use
+  // rotation computed from that quaternion to match reality. This is the
+  // FIXED, derived calibration constant -- not the Live Tracking panel's
+  // offset field (liveRotationUserOffsetDeg below), which is a separate,
+  // day-to-day adjustment ON TOP of this one, deliberately kept at 0 by
+  // default so it always starts from "the calibrated baseline" rather than
+  // silently carrying a leftover value from the last placement. To
+  // recalibrate the baseline itself: point the tracked object at a known
+  // heading and change THIS constant (in code) until, with the panel's
+  // offset field at 0, the live-updated rotation matches (or use
   // motive_axis_calibrate.py -- see the note on liveForwardAxis below).
   //
   // Calibrated 2026-08-15 against "Camera Tracker" (the general-purpose
@@ -27,7 +33,22 @@ App.motiveCalibration = {
   // ('-y' / +17.4) -- see that script's header and the IMPORTANT note below
   // for why, and don't trust that tool's plain (non---gate-axis) output
   // without a live hands-on check afterward.
-  liveRotationOffsetDeg: -9.6,
+  liveRotationCalibratedOffsetDeg: -9.6,
+
+  // Live Tracking panel's "Live rotation offset" field -- a day-to-day
+  // adjustment ADDED ON TOP OF liveRotationCalibratedOffsetDeg above, not a
+  // replacement for it. Kept at 0 by default (and reset to 0 whenever the
+  // browser has no saved value under THIS name -- named differently from
+  // the pre-2026-08-15 single "liveRotationOffsetDeg" field on purpose, so
+  // an old browser's saved -9.6 for that name doesn't get loaded here too
+  // and silently double up with the new liveRotationCalibratedOffsetDeg
+  // above) so "0" always means "trust the calibrated baseline as-is" --
+  // re-placing the tracker by hand naturally lands a few degrees off each
+  // time (three placements in one 2026-08-15 session read 0, -11.8, and
+  // +10 with this at 0), and that placement noise shouldn't get chased
+  // into a stored offset. Only change this for a REAL, repeated
+  // discrepancy you want to correct going forward, not a one-off reading.
+  liveRotationUserOffsetDeg: 0,
 
   // Which of the rigid body's own local axes points "forward" (the way the
   // camera looks / the prop faces). Set when the asset was created in
@@ -42,8 +63,8 @@ App.motiveCalibration = {
   //
   // IMPORTANT: a single static "tilt reads ~0 while level" check cannot
   // tell forward from the object's OTHER horizontal (side/roll) axis --
-  // both read ~0 at rest, and liveRotationOffsetDeg above can make either
-  // one's heading match a known target by coincidence. And a "biggest tilt
+  // both read ~0 at rest, and a rotation offset can make either one's
+  // heading match a known target by coincidence. And a "biggest tilt
   // range across a recorded capture" check ALSO isn't reliable if the
   // motion during capture wasn't a clean, bounded pitch -- a real hand-held
   // motion that overshoots past the natural +/-90 range can make even the
@@ -73,5 +94,19 @@ App.motiveCalibration = {
   // only reached ~11 -- '+z' is forward. This is a property of Camera
   // Tracker's own local frame as Motive assigned it at creation time, not a
   // general rule -- a differently-created rigid body needs its own check.
-  liveForwardAxis: '+z' // '+x' | '-x' | '+y' | '-y' | '+z' | '-z'
+  liveForwardAxis: '+z', // '+x' | '-x' | '+y' | '-y' | '+z' | '-z'
+
+  // Added to a live camera's computed heightM (see js/motive/liveTracking.js's
+  // applyToEntity). App.motiveTransform.FLOOR_BASELINE_MM (the raw Motive Y
+  // that means real floor level) was derived from reference-tracker MARKER
+  // positions, not a rigid body's own solved pivot -- for an asset whose
+  // pivot sits somewhere other than exactly at its markers' plane, height
+  // reads off by a constant even at true floor level. This corrects that,
+  // the same way liveRotationCalibratedOffsetDeg corrects a constant
+  // heading error.
+  //
+  // Calibrated 2026-08-15 against Camera Tracker: markers flush on the
+  // floor (no physical standoff) read heightM -0.01 with this at 0 --
+  // +0.01 corrects it to 0.
+  liveHeightOffsetM: 0.01
 };

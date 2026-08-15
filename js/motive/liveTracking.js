@@ -17,8 +17,12 @@
 // motive_axis_calibrate.py for how it's derived). The resulting direction is
 // then mapped to a rotationDeg using this app's OWN "local -Y = front"
 // convention (js/utils/geometry.js's ROTATION CONVENTION note) --
-// App.motiveCalibration.liveRotationOffsetDeg absorbs whatever fixed offset
-// is left once the axis is right.
+// App.motiveCalibration.liveRotationCalibratedOffsetDeg absorbs whatever
+// fixed offset is left once the axis is right, and
+// liveRotationUserOffsetDeg (the Live Tracking panel's field) is a further,
+// day-to-day adjustment on top of that, kept separate so it defaults to 0
+// instead of carrying the calibrated value around as something that looks
+// editable per-placement.
 window.App = window.App || {};
 
 (function () {
@@ -93,7 +97,9 @@ window.App = window.App || {};
     };
     const forward = rotateForwardAxis(rb.quat);
     const dirApp = App.motiveTransform.toAppDirection(forward);
-    const rotationDeg = directionToRotationDeg(dirApp) + App.motiveCalibration.liveRotationOffsetDeg;
+    const rotationDeg = directionToRotationDeg(dirApp)
+      + App.motiveCalibration.liveRotationCalibratedOffsetDeg
+      + App.motiveCalibration.liveRotationUserOffsetDeg;
     patch.rotationDeg = Math.round(rotationDeg * 10) / 10;
 
     if (assignment.entityType === 'camera') {
@@ -102,8 +108,13 @@ window.App = window.App || {};
       // tracker's pivot height would be wrong (and would fight the input
       // the same way x/y does).
       // standoff 0: a rigid body's origin is its own pivot, not a marker
-      // resting on a surface, so there's nothing to subtract.
-      patch.heightM = Math.round(App.motiveTransform.heightFromRawY(rb.pos.y, 0) * 1000) / 1000;
+      // resting on a surface, so there's nothing to subtract there --
+      // liveHeightOffsetM instead corrects for a difference between THIS
+      // asset's pivot and App.motiveTransform.FLOOR_BASELINE_MM (which was
+      // derived from reference-tracker MARKER positions, not a rigid body's
+      // solved pivot -- see that constant's header).
+      patch.heightM = Math.round((App.motiveTransform.heightFromRawY(rb.pos.y, 0)
+        + App.motiveCalibration.liveHeightOffsetM) * 1000) / 1000;
       patch.tiltDeg = Math.round(forwardTiltDeg(forward) * 10) / 10;
       App.Store.updateCamera(assignment.entityId, patch);
     } else {

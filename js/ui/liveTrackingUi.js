@@ -132,14 +132,19 @@ window.App = window.App || {};
   function initCalibrationInputs() {
     const stored = App.persistence.loadMotiveCalibration() || {};
 
+    // liveRotationUserOffsetDeg, NOT liveRotationCalibratedOffsetDeg -- this
+    // field is a day-to-day adjustment on top of the fixed calibration, so
+    // it starts at (and defaults back to) 0 rather than showing the
+    // calibrated value as if it were meant to be nudged per-placement. See
+    // js/motive/motiveCalibration.js's comments.
     const offset = dom.qs('#live-rotation-offset-input');
-    if (stored.liveRotationOffsetDeg != null) App.motiveCalibration.liveRotationOffsetDeg = stored.liveRotationOffsetDeg;
-    offset.value = App.motiveCalibration.liveRotationOffsetDeg;
+    if (stored.liveRotationUserOffsetDeg != null) App.motiveCalibration.liveRotationUserOffsetDeg = stored.liveRotationUserOffsetDeg;
+    offset.value = App.motiveCalibration.liveRotationUserOffsetDeg;
     offset.addEventListener('input', () => {
       const v = parseFloat(offset.value);
       if (isNaN(v)) return;
-      App.motiveCalibration.liveRotationOffsetDeg = v;
-      App.persistence.saveMotiveCalibration({ liveRotationOffsetDeg: v });
+      App.motiveCalibration.liveRotationUserOffsetDeg = v;
+      App.persistence.saveMotiveCalibration({ liveRotationUserOffsetDeg: v });
     });
 
     const axis = dom.qs('#live-forward-axis-input');
@@ -148,6 +153,16 @@ window.App = window.App || {};
     axis.addEventListener('change', () => {
       App.motiveCalibration.liveForwardAxis = axis.value;
       App.persistence.saveMotiveCalibration({ liveForwardAxis: axis.value });
+    });
+
+    const heightOffset = dom.qs('#live-height-offset-input');
+    if (stored.liveHeightOffsetM != null) App.motiveCalibration.liveHeightOffsetM = stored.liveHeightOffsetM;
+    heightOffset.value = App.motiveCalibration.liveHeightOffsetM;
+    heightOffset.addEventListener('input', () => {
+      const v = parseFloat(heightOffset.value);
+      if (isNaN(v)) return;
+      App.motiveCalibration.liveHeightOffsetM = v;
+      App.persistence.saveMotiveCalibration({ liveHeightOffsetM: v });
     });
   }
 
