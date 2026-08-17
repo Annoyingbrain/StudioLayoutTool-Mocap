@@ -42,11 +42,20 @@ window.App = window.App || {};
     // forward, markers 2/3 right/left.
     'Camera Tracker': {
       liveForwardAxis: '+z',
-      // Flat on the floor pointed at the wall's known floor-center target,
-      // the raw heading read 9.6 degrees against the app's "facing the wall
-      // = rotationDeg 0" convention (js/utils/geometry.js's ROTATION
-      // CONVENTION note) -- so -9.6 corrects it to 0.
-      liveRotationCalibratedOffsetDeg: -9.6,
+      // 0 as of 2026-08-17, replacing an earlier -9.6 that came from a
+      // SINGLE aligned hand placement. Six such placements later spanned 25
+      // degrees (mean -3.0, sd 10.4), which puts the correct offset at
+      // +3.0 +/- 4.2 -- indistinguishable from 0, and ruling out -9.6 at
+      // ~3 standard errors.
+      //
+      // That scatter is hand-placement precision, NOT tracking error: a
+      // settled, locked body holds heading to sd 0.15 over 2400 frames. So
+      // don't re-derive this by putting the tracker down by eye -- no
+      // number of placements beats ~+/-4 that way. Calibrate it with the
+      // tracker MOUNTED as it's actually used, pointed at a known
+      // reference; mounted, the offset is a real constant and heading
+      // tracks at 0.15. See CLAUDE.md's Calibration section.
+      liveRotationCalibratedOffsetDeg: 0,
       liveRotationUserOffsetDeg: 0,
       // Markers flush on the floor (no physical standoff) read heightM
       // -0.01 with this at 0 -- +0.01 corrects it to 0.

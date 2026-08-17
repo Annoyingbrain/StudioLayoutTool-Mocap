@@ -139,7 +139,7 @@ values — `App.motiveCalibration.PROFILES` holds the two derived so far:
 
 | Tracker | Forward axis | Rotation offset | Height offset |
 |---|---|---|---|
-| Camera Tracker (3 markers: 1 forward, 2/3 right/left) | `+z` | `-9.6°` | `+0.01m` |
+| Camera Tracker (3 markers: 1 forward, 2/3 right/left) | `+z` | `0°` | `+0.01m` |
 | T-bar ("Arrow" reference tracker, rectangular props) | `-z` | `+0.5°` | `0` |
 
 Both axes confirmed live 2026-08-17. This *was* one global set of fields,
@@ -148,26 +148,48 @@ calibration got applied to T-bar's frames too, and the T-bar-driven prop
 pointed the wrong way. If a tracker is ever deleted and recreated in Motive
 (renaming is fine), its profile needs re-deriving.
 
-**A symmetric marker layout makes heading flip ±10° on re-acquisition, and
-no offset can fix it.** Camera Tracker's three markers (1 forward, 2 right,
-3 left) are mirror-symmetric about its forward axis, so *two* marker-to-
-template correspondences fit equally well and Motive picks one arbitrarily
-each time it re-acquires the body. The two are mirror images, so the solved
-heading lands either side of true. Measured 2026-08-17 over five
-lift-and-replace cycles with the tracker aligned: readings clustered at
-−10.0° (n=2) and +10.5° (n=3) — **midpoint +0.2°** (which is what confirms
-`-9.6` is the right offset), **separation ~20.5°**. Symptoms: rock-steady
-while tracking continuously, sign flips after occlusion or re-placement.
+**Calibrate the rotation offset with the tracker mounted as it will be
+used — never by setting it down by hand.** Measured 2026-08-17: once a body
+is settled and locked, the solve is *excellent* — 2401 frames, zero
+dropouts, heading sd **0.15°**, total span 0.8°. But six "aligned" hand
+placements of the same tracker spanned **25°** (mean −3.0°, sd 10.4°). That
+scatter is hand-placement precision, not a tracking fault, and it puts a
+hard floor of about ±4° on any offset derived that way (standard error =
+sd/√n). Mounted on the camera the tracker never moves relative to it, so the
+offset becomes a genuine constant and heading tracks at the 0.15° figure.
 
-An offset corrects a *constant*; this is a coin flip, so any value is 20°
-wrong half the time. The fix is in Motive — move a side marker so the three
-form a *scalene* triangle (a few cm outward, or offset along the forward
-axis) and only one correspondence fits. Re-creating the asset gives it a new
-local frame, so re-derive its axis and offset afterwards. Suspect this first
-whenever a heading is bimodal rather than merely noisy; it was originally
-mistaken for hand-placement noise, which a single reading can't distinguish
-from it. (The T-bar's 5-marker layout, with its off-centre 5th marker, is
-asymmetric by construction and doesn't have this problem.)
+Camera Tracker's `0°` comes from those six placements: the correct offset
+works out at **+3.0° ± 4.2°**, statistically indistinguishable from 0, and
+ruling out the earlier −9.6° at roughly 3 standard errors.
+
+**Ignore readings taken while the body is being placed.** Re-acquisition
+produces a second or two of genuine garbage — one capture showed 470
+untracked frames and headings swinging to −76° before locking on. Wait for
+the lock before reading anything.
+
+Two dead ends recorded so they aren't re-walked. Both came from reading
+structure into a handful of eyeballed numbers instead of measuring:
+
+- **−9.6° was the midpoint of what looked like two clusters.** A midpoint is
+  only right if the error is symmetric about truth; if one solve were
+  correct and the other an artifact it would be the *worst* choice, wrong in
+  both states. It was neither — there were no two states.
+- **"Symmetric markers cause a bimodal heading flip"** — plausible (markers
+  2/3 do mirror about the forward axis) and it fitted five samples, but a
+  proper capture showed a single stable solve with ordinary placement
+  scatter. n=5 by eye was never enough to claim bimodality.
+
+```
+python heading_stability.py --seconds 20        # add --name "1" for one body
+```
+
+is what settled it, and is the tool to reach for whenever a heading looks
+wrong. It splits a live capture into continuously-tracked runs (a run ends
+at a tracking dropout — i.e. exactly where a re-placement lands) and reports
+per-run heading mean/sd, so within-run jitter, between-placement scatter,
+and re-acquisition transients can't be mistaken for one another. Reading
+those three off the on-screen number by eye is what produced both dead ends
+above.
 
 **Profiles are applied by hand, per row.** `PROFILES` is keyed by real asset
 name, but rigid bodies currently arrive named `"1"`/`"2"` (see *Rigid body
