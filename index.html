@@ -101,9 +101,9 @@
           <label>Repo <input id="gh-repo" type="text" placeholder="e.g. StudioLayoutTool-Setups" spellcheck="false"></label>
         </div>
         <label>Branch <input id="gh-branch" type="text" placeholder="main" value="main" spellcheck="false"></label>
-        <button id="btn-save-github">Save Setup to GitHub</button>
+        <button id="btn-save-github">Back Up All Setups to GitHub</button>
         <div id="gh-status" class="small muted"></div>
-        <p class="hint">Saves this setup (all its positions, props, frame grabs) as one JSON file (setups/&lt;id&gt;.json, overwritten on every save) to the repo above, via GitHub's API. The token is stored only in this browser — use a fine-grained token scoped to just that one repo with Contents: read/write.</p>
+        <p class="hint">Saves the setup you're in, then backs up <em>every</em> setup on this machine the repo hasn't already got the latest version of — so one press at the end of the day covers everything you worked on, not just what's open. Each goes up as one JSON file (setups/&lt;id&gt;.json, all its positions, props and frame grabs, overwritten each time) via GitHub's API; setups unchanged since their last backup are skipped. The token is stored only in this browser — use a fine-grained token scoped to just that one repo with Contents: read/write.</p>
 
         <div class="subheading">Load from GitHub</div>
         <select id="gh-load-picker"><option value="">Fill in token/owner/repo first</option></select>

@@ -142,6 +142,15 @@ theorising about the connection — every connection bug so far failed
 - Setups are `.json` files in `--setups-dir`, shared by every device on the
   network. Filenames come from the setup name; identity is the `id` inside.
   **GitHub Sync is a manual backup of that folder**, not the primary store.
+  It backs up the *whole folder*, not the open setup: a shoot day touches
+  several setups and only one of them is open when the button is pressed, so
+  pushing just that one quietly left the rest un-backed-up. What's already up
+  there is read from `setups/index.json`'s per-setup `updatedAt` versus the
+  local one (`Store.touch()` bumps it on every edit), so unchanged setups are
+  skipped and the button is cheap to press repeatedly. A missing timestamp on
+  either side counts as "needs pushing" — a wasted upload costs seconds, a
+  wrong skip costs a day's work. One setup failing to upload doesn't abort
+  the ones queued behind it; the status line names the casualties.
 - Comments explain *why*, especially where something non-obvious was learned
   the hard way. Keep that when editing — most of the comments here exist
   because the alternative cost hours.
