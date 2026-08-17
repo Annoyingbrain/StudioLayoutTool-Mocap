@@ -1,9 +1,10 @@
-// GitHub Sync panel: save the current setup (all its scenes, props, frame
-// grabs, reference points) as one JSON file (setups/<setup.id>.json,
-// overwritten on every save) to a GitHub repo via the Contents API, straight
-// from the browser -- no server involved, same as the rest of this static
-// app. A small setups/index.json manifest ({id, name, updatedAt}[]) is kept
-// alongside so the app can list/load setups without fetching every file.
+// GitHub Sync panel: back up the setups folder to a GitHub repo, one JSON
+// file per setup (setups/<setup.id>.json, overwritten on every save),
+// straight from the browser via the Contents API -- no server involved,
+// same as the rest of this static app. A small setups/index.json manifest
+// ({id, name, updatedAt}[]) is kept alongside so the app can list/load
+// setups without fetching every file, and is also what says which version
+// of each setup is already up there.
 // The token is only ever kept in this browser's local storage.
 window.App = window.App || {};
 
@@ -96,11 +97,12 @@ window.App = window.App || {};
 
   // The setups folder on the server is the primary store -- the toolbar's
   // Save and "Load setup…" are the everyday path, and GitHub is a backup of
-  // it. So anything that goes to or comes from the repo is mirrored into
-  // that folder, otherwise a setup could exist only in GitHub and be missing
-  // from the list you normally work from. A failure there is reported but
-  // never fails the GitHub operation itself, which has already succeeded by
-  // this point.
+  // it. So anything restored from the repo is mirrored into that folder,
+  // otherwise a setup could exist only in GitHub and be missing from the
+  // list you normally work from. A failure there is reported but never fails
+  // the GitHub operation itself, which has already succeeded by this point.
+  // (The other direction needs no mirroring: a backup only ever pushes
+  // setups that came out of that folder in the first place.)
   async function mirrorLocally(setup) {
     const res = await App.persistence.saveLocal(setup);
     if (App.toolbar && App.toolbar.refreshSetupPicker) await App.toolbar.refreshSetupPicker();
@@ -133,7 +135,18 @@ window.App = window.App || {};
     }
   }
 
-  async function saveToGitHub() {
+  // Backs up the whole setups folder, not just the setup currently open.
+  // The everyday path is Save (to server.py's setups folder), pressed many
+  // times across a shoot day and usually across several setups; GitHub is
+  // the end-of-day backup of that folder. Pushing only the open setup --
+  // which is what this used to do -- silently left every other setup touched
+  // that day un-backed-up, with nothing on screen to say so.
+  //
+  // "Already backed up" is decided per setup from index.json's updatedAt,
+  // and Store.touch() bumps a setup's updatedAt on every edit, so untouched
+  // setups are skipped: clicking again costs two listings rather than a
+  // re-upload of every embedded frame grab in the folder.
+  async function syncAllToGitHub() {
     const cfg = readFields();
     if (!configReady(cfg)) {
       setStatus('Fill in token, owner and repo first.', true);
@@ -141,32 +154,108 @@ window.App = window.App || {};
     }
     localStorage.setItem(LS_KEY, JSON.stringify(cfg));
 
-    const setup = App.Store.getSetup();
-    const path = `setups/${setup.id}.json`;
-
     const btn = dom.qs('#btn-save-github');
     btn.disabled = true;
-    setStatus('Saving…');
+    setStatus('Checking what needs backing up…');
 
+    const warnings = [];
     try {
-      const existing = await fetchJsonFile(cfg, path);
-      await putJsonFile(cfg, path, setup, existing.sha, `Save "${setup.name}" — ${new Date().toISOString()}`);
+      // The open setup's latest edits live only in the Store, so put them on
+      // disk first -- otherwise "back up everything local" would faithfully
+      // back up a stale copy of the very setup being worked on. A failure
+      // here is worth saying out loud but mustn't stop the rest: the other
+      // setups are already on disk and still worth pushing.
+      const open = App.Store.getSetup();
+      const openSave = await App.persistence.saveLocal(open);
+      if (openSave.ok) {
+        if (App.toolbar && App.toolbar.refreshSetupPicker) await App.toolbar.refreshSetupPicker();
+      } else {
+        warnings.push(`the open setup "${open.name}" could not be saved locally first (${openSave.reason})`);
+      }
 
-      // Keep the index manifest in sync so the Load list stays accurate.
-      await updateIndex(cfg, current => {
-        const entry = { id: setup.id, name: setup.name, updatedAt: setup.updatedAt, sceneCount: setup.scenes.length };
-        return [entry, ...current.filter(e => e.id !== setup.id)];
-      }, `Update setups index — ${setup.name}`);
+      const localEntries = await App.persistence.listLocal();
+      if (!localEntries.length) {
+        setStatus('No setups saved on this machine yet — nothing to back up.');
+        App.toast('No local setups to back up.');
+        return;
+      }
 
-      const local = await mirrorLocally(setup);
-      setStatus(`Backed up to ${cfg.owner}/${cfg.repo}/${path}` + (local.ok ? '' : ` (but saving locally failed: ${local.reason})`));
-      App.toast(local.ok
-        ? `Setup backed up to GitHub: ${path}`
-        : `Backed up to GitHub, but the local save failed: ${local.reason}`, !local.ok);
+      // The directory listing carries each file's blob sha, which is all a
+      // PUT needs to overwrite it -- so this replaces what used to be a
+      // per-file GET that downloaded the entire setup (frame grabs included)
+      // purely to read its sha back out.
+      const [repoFiles, indexFile] = await Promise.all([
+        listDirectory(cfg, 'setups'),
+        fetchJsonFile(cfg, INDEX_PATH)
+      ]);
+      const shaById = new Map();
+      (Array.isArray(repoFiles) ? repoFiles : [])
+        .filter(f => f.type === 'file' && f.name.endsWith('.json') && f.name !== 'index.json')
+        .forEach(f => shaById.set(f.name.replace(/\.json$/, ''), f.sha));
+      const indexed = Array.isArray(indexFile.data) ? indexFile.data : [];
+      const backedUpAt = new Map(indexed.map(e => [e.id, e.updatedAt]));
+
+      // Push when the repo hasn't got the file, when the index has no record
+      // of it (so there's no telling which version is up there), or when the
+      // local copy has been edited since. A missing timestamp on either side
+      // means "can't prove it's current" -- push it, since the cost of a
+      // needless upload is a few seconds and the cost of a wrong skip is a
+      // day's work not backed up.
+      const pending = localEntries.filter(e => {
+        if (!shaById.has(e.id) || !backedUpAt.has(e.id)) return true;
+        const there = backedUpAt.get(e.id);
+        return !e.updatedAt || !there || e.updatedAt > there;
+      });
+
+      if (!pending.length) {
+        setStatus(`All ${localEntries.length} local setup(s) are already backed up to ${cfg.owner}/${cfg.repo}.`);
+        App.toast('Everything on this machine is already backed up to GitHub.');
+        await refreshLoadList(cfg);
+        return;
+      }
+
+      const pushed = [];
+      const failed = [];
+      for (let i = 0; i < pending.length; i++) {
+        const entry = pending[i];
+        setStatus(`Backing up ${i + 1}/${pending.length}: ${entry.name}…`);
+        try {
+          const setup = await App.persistence.loadLocal(entry.id);
+          if (!setup) throw new Error('it is no longer in the setups folder');
+          await putJsonFile(cfg, `setups/${setup.id}.json`, setup, shaById.get(setup.id),
+            `Save "${setup.name}" — ${new Date().toISOString()}`);
+          pushed.push({ id: setup.id, name: setup.name, updatedAt: setup.updatedAt, sceneCount: (setup.scenes || []).length });
+        } catch (err) {
+          // One unreadable or rejected setup must not cost the backup of
+          // every other setup queued behind it.
+          failed.push(`${entry.name} (${err.message})`);
+        }
+      }
+
+      // One index write for the whole batch rather than one per setup: fewer
+      // commits, and fewer chances to lose the 409 retry race in updateIndex.
+      if (pushed.length) {
+        await updateIndex(cfg, current => {
+          const ids = new Set(pushed.map(e => e.id));
+          return [...pushed, ...current.filter(e => !ids.has(e.id))];
+        }, `Back up ${pushed.length} setup(s) — ${new Date().toISOString()}`);
+      }
+
+      // "N of M" only when some failed -- on the happy path the two numbers
+      // are equal and the longer form just reads like something went wrong.
+      const skipped = localEntries.length - pending.length;
+      const count = failed.length ? `${pushed.length} of ${pending.length}` : String(pushed.length);
+      const parts = [`Backed up ${count} setup(s) to ${cfg.owner}/${cfg.repo}`];
+      if (skipped) parts.push(`${skipped} already up to date`);
+      if (failed.length) parts.push(`failed: ${failed.join('; ')}`);
+      warnings.forEach(w => parts.push(w));
+      const bad = failed.length > 0 || warnings.length > 0;
+      setStatus(parts.join(' — ') + '.', bad);
+      App.toast(bad ? parts.join(' — ') : `Backed up ${pushed.length} setup(s) to GitHub.`, bad);
       await refreshLoadList(cfg);
     } catch (err) {
       setStatus(err.message, true);
-      App.toast('GitHub save failed: ' + err.message, true);
+      App.toast('GitHub backup failed: ' + err.message, true);
     } finally {
       btn.disabled = false;
     }
@@ -291,7 +380,7 @@ window.App = window.App || {};
     init() {
       const cfg = loadConfig();
       populateFields(cfg);
-      dom.qs('#btn-save-github').addEventListener('click', saveToGitHub);
+      dom.qs('#btn-save-github').addEventListener('click', syncAllToGitHub);
       dom.qs('#btn-refresh-github-list').addEventListener('click', () => refreshLoadList());
       dom.qs('#gh-load-picker').addEventListener('change', e => loadFromGitHub(e.target.value));
       ['#gh-token', '#gh-owner', '#gh-repo', '#gh-branch'].forEach(sel => {
