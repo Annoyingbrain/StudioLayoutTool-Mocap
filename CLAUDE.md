@@ -148,6 +148,27 @@ calibration got applied to T-bar's frames too, and the T-bar-driven prop
 pointed the wrong way. If a tracker is ever deleted and recreated in Motive
 (renaming is fine), its profile needs re-deriving.
 
+**A symmetric marker layout makes heading flip ±10° on re-acquisition, and
+no offset can fix it.** Camera Tracker's three markers (1 forward, 2 right,
+3 left) are mirror-symmetric about its forward axis, so *two* marker-to-
+template correspondences fit equally well and Motive picks one arbitrarily
+each time it re-acquires the body. The two are mirror images, so the solved
+heading lands either side of true. Measured 2026-08-17 over five
+lift-and-replace cycles with the tracker aligned: readings clustered at
+−10.0° (n=2) and +10.5° (n=3) — **midpoint +0.2°** (which is what confirms
+`-9.6` is the right offset), **separation ~20.5°**. Symptoms: rock-steady
+while tracking continuously, sign flips after occlusion or re-placement.
+
+An offset corrects a *constant*; this is a coin flip, so any value is 20°
+wrong half the time. The fix is in Motive — move a side marker so the three
+form a *scalene* triangle (a few cm outward, or offset along the forward
+axis) and only one correspondence fits. Re-creating the asset gives it a new
+local frame, so re-derive its axis and offset afterwards. Suspect this first
+whenever a heading is bimodal rather than merely noisy; it was originally
+mistaken for hand-placement noise, which a single reading can't distinguish
+from it. (The T-bar's 5-marker layout, with its off-centre 5th marker, is
+asymmetric by construction and doesn't have this problem.)
+
 **Profiles are applied by hand, per row.** `PROFILES` is keyed by real asset
 name, but rigid bodies currently arrive named `"1"`/`"2"` (see *Rigid body
 names* below), so the right profile can't be matched automatically — pick it
