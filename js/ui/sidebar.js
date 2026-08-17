@@ -23,25 +23,93 @@ window.App = window.App || {};
     return `${sign}${meters}m ${cm}cm`;
   }
 
+  // One button per prop-measuring tracker, for parking a tracker on a prop
+  // long enough to read its position and moving straight on to the next --
+  // the alternative being the Live Tracking panel's dropdown, which means
+  // leaving the prop list and hunting for the right entity each time.
+  //
+  // Assignments are keyed by tracker name and hold exactly one entity, so
+  // linking T-bar to a second prop releases the first automatically; that's
+  // the measure-and-move-on workflow rather than something to guard against.
+  function renderTrackerLinkButtons(prop) {
+    return App.motiveCalibration.propTrackerNames.map(trackerName => {
+      const assignment = App.liveTracking.getAssignmentFor(trackerName);
+      const linkedHere = !!assignment && assignment.entityType === 'prop' && assignment.entityId === prop.id;
+      const elsewhere = !!assignment && !linkedHere;
+      return dom.el('button', {
+        class: 'prop-row-link' + (linkedHere ? ' active' : ''),
+        text: trackerName,
+        title: linkedHere
+          ? `${trackerName} is driving "${prop.name}" — click to release it`
+          : `Measure "${prop.name}" with ${trackerName}` +
+            (elsewhere ? ' (releases whatever it is on now)' : ''),
+        onclick: (e) => {
+          // Without this the row's own handler also fires and changes the
+          // selection, yanking the inspector to a different prop mid-measure.
+          e.stopPropagation();
+          if (linkedHere) App.liveTracking.unassign(trackerName);
+          else App.liveTracking.assign(trackerName, 'prop', prop.id);
+        }
+      });
+    });
+  }
+
+  // Rebuilding this list replaces its buttons, and both the Store and
+  // liveTracking emit on every applied frame (~30Hz) -- so a rebuild per
+  // emit would leave the link buttons unclickable exactly while tracking is
+  // live, which is when they're used. Same fix as js/ui/liveTrackingUi.js:
+  // only rebuild when something STRUCTURAL changes, and let the per-frame
+  // path rewrite the measured/manual badge in place.
+  function propListStructureKey() {
+    const scene = App.Store.getScene();
+    return [
+      scene.props.map(p => `${p.id}:${p.name}:${p.color}`).join('|'),
+      App.Store.getSelectedPropId(),
+      JSON.stringify(App.liveTracking.getAssignments())
+    ].join('##');
+  }
+
+  const propSrcElById = {};
+  let lastPropListKey = null;
+
   function renderPropList() {
     const scene = App.Store.getScene();
+    dom.qs('#prop-count').textContent = `(${scene.props.length})`;
+
+    const key = propListStructureKey();
+    if (key === lastPropListKey) {
+      scene.props.forEach(p => {
+        const el = propSrcElById[p.id];
+        if (!el) return;
+        const measured = p.positionSource === 'measured';
+        const text = measured ? 'measured' : 'manual';
+        if (el.textContent !== text) el.textContent = text;
+        el.className = 'prop-row-src' + (measured ? ' measured' : '');
+      });
+      return;
+    }
+    lastPropListKey = key;
+
     const selectedId = App.Store.getSelectedPropId();
     const list = dom.qs('#prop-list');
-    dom.qs('#prop-count').textContent = `(${scene.props.length})`;
     dom.clear(list);
+    Object.keys(propSrcElById).forEach(k => delete propSrcElById[k]);
 
     scene.props.forEach(p => {
+      const srcEl = dom.el('span', {
+        class: 'prop-row-src' + (p.positionSource === 'measured' ? ' measured' : ''),
+        text: p.positionSource === 'measured' ? 'measured' : 'manual'
+      });
+      propSrcElById[p.id] = srcEl;
+
       const row = dom.el('div', {
         class: 'prop-row' + (p.id === selectedId ? ' selected' : ''),
         onclick: () => App.Store.selectProp(p.id)
       }, [
         dom.el('span', { class: 'swatch', style: `background:${p.color}` }),
         dom.el('span', { class: 'prop-row-name', text: p.name }),
-        dom.el('span', {
-          class: 'prop-row-src' + (p.positionSource === 'measured' ? ' measured' : ''),
-          text: p.positionSource === 'measured' ? 'measured' : 'manual'
-        })
-      ]);
+        srcEl
+      ].concat(renderTrackerLinkButtons(p)));
       list.appendChild(row);
     });
   }
@@ -167,24 +235,96 @@ window.App = window.App || {};
     });
   }
 
+  // The camera equivalent of renderTrackerLinkButtons: one button per camera
+  // row driving it from the camera tracker, so linking/releasing the camera
+  // doesn't mean scrolling past the whole Live Tracking panel to find its
+  // row. Same toggle as that panel's Link/Release camera button -- both go
+  // through the one assignment keyed by cameraTrackerName, so whichever is
+  // used, the other reflects it.
+  //
+  // Only ONE tracker button here, unlike a prop's two: the camera tracker is
+  // whichever rigid body is designated as such (settable via Live Tracking's
+  // "Set as tracker", because rigid bodies currently arrive named by numeric
+  // id -- see js/ui/liveTrackingUi.js), and it's never assigned to a prop.
+  function renderCameraLinkButton(camera) {
+    const trackerName = App.motiveCalibration.cameraTrackerName;
+    const assignment = App.liveTracking.getAssignmentFor(trackerName);
+    const linkedHere = !!assignment && assignment.entityType === 'camera' && assignment.entityId === camera.id;
+    const elsewhere = !!assignment && !linkedHere;
+    return dom.el('button', {
+      class: 'prop-row-link' + (linkedHere ? ' active' : ''),
+      text: linkedHere ? 'Unlink' : 'Link',
+      title: linkedHere
+        // Says WHY you'd release it: a live-driven camera owns its
+        // x/y/rotation and overwrites anything typed into them.
+        ? `"${trackerName}" is driving "${camera.name}" — click to release it so the camera can be placed by hand`
+        : `Drive "${camera.name}" live from "${trackerName}"` +
+          (elsewhere ? ' (releases whatever it is on now)' : ''),
+      onclick: (e) => {
+        // As on the prop rows: without this the row's own handler also fires
+        // and changes the camera selection under the inspector.
+        e.stopPropagation();
+        if (linkedHere) App.liveTracking.unassign(trackerName);
+        else App.liveTracking.assign(trackerName, 'camera', camera.id);
+      }
+    });
+  }
+
+  // Same reason as propListStructureKey: this list now carries a button, and
+  // rebuilding it on every ~30Hz emit would leave that button unclickable
+  // exactly while tracking is live. The measured/manual badge is the only
+  // per-frame part, and it's rewritten in place below.
+  function cameraListStructureKey() {
+    const scene = App.Store.getScene();
+    return [
+      scene.cameras.map(c => `${c.id}:${c.name}:${c.color}`).join('|'),
+      App.Store.getSelectedCameraId(),
+      App.motiveCalibration.cameraTrackerName,
+      JSON.stringify(App.liveTracking.getAssignments())
+    ].join('##');
+  }
+
+  const cameraSrcElById = {};
+  let lastCameraListKey = null;
+
   function renderCameraList() {
     const scene = App.Store.getScene();
+    dom.qs('#camera-count').textContent = `(${scene.cameras.length})`;
+
+    const key = cameraListStructureKey();
+    if (key === lastCameraListKey) {
+      scene.cameras.forEach(c => {
+        const el = cameraSrcElById[c.id];
+        if (!el) return;
+        const measured = c.positionSource === 'measured';
+        const text = measured ? 'measured' : 'manual';
+        if (el.textContent !== text) el.textContent = text;
+        el.className = 'prop-row-src' + (measured ? ' measured' : '');
+      });
+      return;
+    }
+    lastCameraListKey = key;
+
     const selectedId = App.Store.getSelectedCameraId();
     const list = dom.qs('#camera-list');
-    dom.qs('#camera-count').textContent = `(${scene.cameras.length})`;
     dom.clear(list);
+    Object.keys(cameraSrcElById).forEach(k => delete cameraSrcElById[k]);
 
     scene.cameras.forEach(c => {
+      const srcEl = dom.el('span', {
+        class: 'prop-row-src' + (c.positionSource === 'measured' ? ' measured' : ''),
+        text: c.positionSource === 'measured' ? 'measured' : 'manual'
+      });
+      cameraSrcElById[c.id] = srcEl;
+
       const row = dom.el('div', {
         class: 'prop-row' + (c.id === selectedId ? ' selected' : ''),
         onclick: () => App.Store.selectCamera(c.id)
       }, [
         dom.el('span', { class: 'swatch', style: `background:${c.color}` }),
         dom.el('span', { class: 'prop-row-name', text: c.name }),
-        dom.el('span', {
-          class: 'prop-row-src' + (c.positionSource === 'measured' ? ' measured' : ''),
-          text: c.positionSource === 'measured' ? 'measured' : 'manual'
-        })
+        srcEl,
+        renderCameraLinkButton(c)
       ]);
       list.appendChild(row);
     });

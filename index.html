@@ -62,10 +62,11 @@
 
       <section class="panel">
         <h3>Tools</h3>
-        <div class="tool-row">
-          <button id="tool-select" class="tool-btn active" data-tool="select">Select / Move</button>
-          <button id="tool-add-prop" class="tool-btn" data-tool="add-prop">+ Add Prop</button>
-        </div>
+        <!-- No "Select / Move" button: select is the resting state, not
+             something to switch to. Placing a prop drops straight back to it
+             (canvas.js), so the button only ever un-armed Add Prop -- which
+             Add Prop now does itself by toggling. -->
+        <button id="tool-add-prop" class="tool-btn tool-btn-primary" data-tool="add-prop">+ Add Prop</button>
         <div class="tool-row">
           <label class="chk"><input type="checkbox" id="chk-grid" checked> Show grid</label>
           <label class="chk"><input type="checkbox" id="chk-studio-sketch" checked> Show studio sketch</label>

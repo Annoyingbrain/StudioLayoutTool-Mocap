@@ -56,7 +56,9 @@ to ~30 Hz, but that's still 30 full re-renders a second. Never rebuild an
 interactive element (a `<select>`, an `<input>`) on a Store emission — the
 dropdown becomes physically unclickable because it's replaced mid-click.
 Update in place, or gate the rebuild on a structure key (see
-`liveTrackingUi.js`).
+`liveTrackingUi.js`, and `sidebar.js`'s `propListStructureKey` /
+`cameraListStructureKey` — both lists carry per-row tracker link buttons,
+which would otherwise be unclickable precisely while tracking is live).
 
 **Assignments don't live in the Store.** UI that reflects them must
 subscribe to `App.liveTracking` as well, or it will render stale state
@@ -108,6 +110,13 @@ theorising about the connection — every connection bug so far failed
   a new position is added; props don't** — a camera is studio hardware present
   for every shot, props are dressed per shot. Copies keep the same camera id
   so live assignments survive a position switch.
+- **Props are measured by parking a tracker on them, one at a time.** Each
+  prop row carries a button per tracker in
+  `App.motiveCalibration.propTrackerNames` (T-bar for rectangular props,
+  Triangle for circular/triangular). An assignment holds a single entity, so
+  linking a tracker to the next prop releases the previous one — that *is*
+  the measure-and-move-on workflow, not a bug to guard against. Both
+  trackers can be parked on different props at once.
 - **The studio runs one camera, and every scene always has exactly one.** It's
   created with the scene (at the studio floor centre) rather than placed by
   hand, so there's no "add camera" tool; `ensureCamera()` tops up any setup
@@ -115,7 +124,11 @@ theorising about the connection — every connection bug so far failed
   while there's only one — both still appear for a setup carrying several, so
   older multi-camera setups stay editable rather than being silently
   truncated. `Store.getInspectedCamera()` is what the inspector edits: the
-  single camera needs no selecting, several still do.
+  single camera needs no selecting, several still do. Each camera row in the
+  left panel also carries a **Link/Unlink** button driving that camera from
+  the camera tracker — the same single assignment as Live Tracking's
+  Link/Release camera button, so the two always agree; it's duplicated onto
+  the row so linking doesn't mean scrolling past the Live Tracking panel.
 - Setups are `.json` files in `--setups-dir`, shared by every device on the
   network. Filenames come from the setup name; identity is the `id` inside.
   **GitHub Sync is a manual backup of that folder**, not the primary store.

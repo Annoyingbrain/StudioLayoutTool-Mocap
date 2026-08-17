@@ -106,6 +106,13 @@ window.App = window.App || {};
     // tracker" button, which is what actually sets this day to day.
     cameraTrackerName: 'Camera Tracker',
 
+    // The trackers used to measure PROPS, in the order their link buttons
+    // appear on each row of the prop list (js/ui/sidebar.js). T-bar handles
+    // rectangular props, Triangle circular/triangular ones. Names must match
+    // what server.py --name-map calls them, since assignments are keyed by
+    // the name a rigid body arrives under.
+    propTrackerNames: ['T-bar', 'Triangle'],
+
     // liveName -> calibration. Seeded with the real asset names so profiles
     // apply automatically if/when name resolution works; live numeric-id
     // rows get theirs via applyProfile() or the per-row fields.

@@ -48,7 +48,10 @@ window.App = window.App || {};
 
   function syncTools() {
     const tool = App.Store.getTool();
-    dom.qsa('.tool-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tool === tool));
+    // Scoped to [data-tool] for the same reason as the click binding: an
+    // unscoped .tool-btn also matched Live Tracking's camera link buttons and
+    // stripped their "linked" highlight on the next Store emission.
+    dom.qsa('.tool-btn[data-tool]').forEach(btn => btn.classList.toggle('active', btn.dataset.tool === tool));
   }
 
   function syncFrameGrab() {
@@ -171,8 +174,17 @@ window.App = window.App || {};
       dom.qs('#btn-export-floor-png').addEventListener('click', () => App.floorPngExport.exportSetup(App.Store.getSetup(), App.Store.getScene()));
       dom.qs('#btn-report').addEventListener('click', () => App.reportExport.open(App.Store.getSetup(), App.Store.getScene()));
 
-      dom.qsa('.tool-btn').forEach(btn => {
-        btn.addEventListener('click', () => App.Store.setTool(btn.dataset.tool));
+      // [data-tool], not bare .tool-btn: the Live Tracking panel reuses that
+      // class for its camera link buttons, and they aren't tools.
+      //
+      // Clicking the ALREADY-active tool drops back to select -- the only way
+      // to un-arm Add Prop now that the Select / Move button is gone (placing
+      // a prop already returns to select on its own, see canvas.js).
+      dom.qsa('.tool-btn[data-tool]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const t = btn.dataset.tool;
+          App.Store.setTool(App.Store.getTool() === t ? 'select' : t);
+        });
       });
 
       dom.qs('#chk-grid').addEventListener('change', () => App.canvas.render());

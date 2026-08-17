@@ -104,6 +104,15 @@ button.primary, button#btn-compute-position { background: var(--accent-dim); bor
 
 .tool-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; align-items: center; }
 .tool-btn.active { border-color: var(--accent); color: var(--accent); }
+/* Add Prop is the only tool button left and the panel's one real action, so
+   it gets the full width and a bigger hit area -- it's also pressed with a
+   tracker in the other hand, where a 13px target is fiddly. */
+.tool-btn-primary {
+  display: block; width: 100%;
+  padding: 10px 12px; font-size: 15px; font-weight: 600;
+  margin-bottom: 6px;
+}
+.tool-btn-primary.active { background: var(--accent-dim); }
 .chk { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
 .chk input[type="number"] { width: 50px; }
 
@@ -150,18 +159,32 @@ label input[type="color"] { padding: 2px; height: 30px; }
 .hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
 .hidden { display: none !important; }
 
-#prop-list { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
+/* Taller than it needs to be for reading, because the rows are WORKED on --
+   the link buttons are pressed one-handed with a tracker in the other, so
+   the targets matter more than fitting more rows on screen. Raised the
+   list's max-height to match, or fewer props would be visible at once. */
+#prop-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
 .prop-row {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 6px; border-radius: 4px; border: 1px solid transparent;
-  cursor: pointer; font-size: 12px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px; border-radius: 4px; border: 1px solid transparent;
+  cursor: pointer; font-size: 13px;
 }
 .prop-row:hover { border-color: var(--border); }
 .prop-row.selected { border-color: var(--accent); background: rgba(77,166,255,0.08); }
-.prop-row .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.prop-row .swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
 .prop-row .prop-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.prop-row .prop-row-src { font-size: 10px; padding: 1px 4px; border-radius: 3px; border: 1px solid var(--border); color: var(--muted); }
+.prop-row .prop-row-src { font-size: 12px; padding: 3px 7px; border-radius: 3px; border: 1px solid var(--border); color: var(--muted); flex-shrink: 0; }
 .prop-row .prop-row-src.measured { color: var(--accent); border-color: var(--accent); }
+/* The "measure with this tracker" / camera link buttons. The prop name gives
+   up the room rather than these (it ellipsises, they don't shrink): a name is
+   only read, these are hit. */
+.prop-row .prop-row-link {
+  font-size: 13px; padding: 5px 10px; border-radius: 4px;
+  background: none; border: 1px solid var(--border); color: var(--muted);
+  flex-shrink: 0;
+}
+.prop-row .prop-row-link:hover { border-color: var(--accent); color: var(--text); }
+.prop-row .prop-row-link.active { border-color: var(--accent); color: var(--accent); background: rgba(77,166,255,0.12); }
 
 .thumb { max-width: 100%; border-radius: 4px; margin: 6px 0; border: 1px solid var(--border); }
 
@@ -242,7 +265,15 @@ label input[type="color"] { padding: 2px; height: 30px; }
     font-size: 16px; /* prevents iOS Safari auto-zoom-on-focus */
   }
   .chk input[type="checkbox"] { width: 20px; height: 20px; }
-  .prop-row { padding: 9px 8px; }
+  /* Restated here because the shared rule above is later in the file and
+     would otherwise shrink this one back down on touch -- where it wants to
+     be the BIGGEST target, not the same as everything else. */
+  .tool-btn-primary { min-height: 48px; padding: 12px; }
+  .prop-row { padding: 10px 8px; }
+  /* Exempt from the blanket min-height: 40px above -- these sit INSIDE a row
+     that is itself a tap target, so 40px each would make every row ~56px
+     tall and push the list off screen. 32px still clears the ~9mm guideline. */
+  .prop-row .prop-row-link { min-height: 32px; padding: 6px 12px; }
   .point-status-row { padding: 8px 6px; }
 }
 
