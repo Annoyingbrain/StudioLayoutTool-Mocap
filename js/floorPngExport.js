@@ -327,7 +327,11 @@ App.floorPngExport = (function () {
       const canvas = buildCanvas(setup, scene);
       canvas.toBlob(blob => {
         if (!blob) { App.toast('Could not generate PNG.', true); return; }
-        const safeName = `${setup.name || 'setup'}_Position_${scene.name || '1'}_floor`.replace(/[^a-z0-9_\-]+/gi, '_');
+        // No literal "Position" in here: scene names already default to
+        // "Position 1", so inserting one produced
+        // Untitled_Setup_Position_Position_1_floor.png. A scene renamed to
+        // something else reads fine without it too.
+        const safeName = `${setup.name || 'setup'}_${scene.name || 'Position 1'}_floor`.replace(/[^a-z0-9_\-]+/gi, '_');
         savePng(`${safeName}.png`, blob);
       }, 'image/png');
     },
