@@ -162,6 +162,19 @@ calibration got applied to T-bar's frames too, and the T-bar-driven prop
 pointed the wrong way. If a tracker is ever deleted and recreated in Motive
 (renaming is fine), its profile needs re-deriving.
 
+**A tracked entity is positioned at Motive's rigid-body PIVOT, which is the
+marker centroid — not the tracker's visual centre.** Measured from
+`Reference trackers/T-bar.csv`: the pivot sits within 0.01mm of the centroid
+of all five markers (Motive's default when a rigid body is built from a
+marker selection), and therefore **11.4mm from the crossbar × stem
+intersection** — 8.7mm of that in the floor plane, pulled toward the stem
+marker, the rest downward because the stem lies on the floor while the
+crossbar is 40mm up. One marker in five drags the centroid 40.5/5 ≈ 8mm
+horizontally; the geometry accounts for it exactly. So line a tracker's
+*centroid* up with what you want measured, not its visual centre. Under 1cm
+and so ignorable for a floor plan — if it ever isn't, move the pivot in
+Motive's rigid-body properties rather than adding an app-side fudge.
+
 **Calibrate the rotation offset with the tracker mounted as it will be
 used — never by setting it down by hand.** Measured 2026-08-17: once a body
 is settled and locked, the solve is *excellent* — 2401 frames, zero

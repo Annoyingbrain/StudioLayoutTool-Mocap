@@ -167,8 +167,10 @@ window.App = window.App || {};
     const center = geo.worldToScreen(view, prop.x, prop.y);
     const corners = isCircle ? null : geo.propCorners(prop).map(p => geo.worldToScreen(view, p.x, p.y));
     const radiusPx = isCircle ? geo.propRadius(prop) * view.scale : 0;
-    // Where the "measured" indicator dot and the name label anchor -- a
-    // corner for a rectangle, the top of the circle for a circle.
+    // Where the "measured" indicator dot sits -- a corner for a rectangle,
+    // the top of the circle for a circle. Anchored to the shape rather than
+    // to the screen so it rotates with the prop. (The name label is drawn at
+    // the centre, not here.)
     const markerPt = isCircle ? { x: center.x, y: center.y - radiusPx } : corners[1];
 
     ctx.save();
