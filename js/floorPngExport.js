@@ -285,6 +285,39 @@ App.floorPngExport = (function () {
     return canvas;
   }
 
+  // Hands the PNG to server.py, which writes it into --png-dir (the studio's
+  // Z:\App Generated PNG by default) so the file lands where Disguise picks
+  // it up, with nobody moving it out of a downloads folder.
+  //
+  // A page can't write to a drive path itself -- the browser sandbox allows a
+  // download, or a save dialog to be steered by hand every single time, and
+  // nothing else -- so the only way to a fixed folder is the server process,
+  // which is an ordinary Windows program. Note the file therefore lands on
+  // the machine running server.py, not on the tablet or laptop that pressed
+  // the button; that's the point, since the shared drive is what Disguise
+  // reads.
+  //
+  // Falls back to a plain download whenever that doesn't work (server down,
+  // drive not mapped, page opened straight off the filesystem). Losing the
+  // shared folder shouldn't mean losing the export -- but the toast says
+  // which of the two happened, or the file quietly isn't where it's expected.
+  function savePng(filename, blob) {
+    fetch(`/api/floor-png?name=${encodeURIComponent(filename)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body: blob
+    })
+      .then(res => res.json().then(body => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => {
+        if (!ok) throw new Error(body.error || 'Server refused the PNG');
+        App.toast(`Saved to ${body.path}`);
+      })
+      .catch(err => {
+        App.dom.downloadBlob(filename, blob);
+        App.toast(`Couldn't save to the shared folder (${err.message}) — downloaded instead.`, true);
+      });
+  }
+
   return {
     buildCanvas,
     buildTestPointsCanvas,
@@ -295,7 +328,7 @@ App.floorPngExport = (function () {
       canvas.toBlob(blob => {
         if (!blob) { App.toast('Could not generate PNG.', true); return; }
         const safeName = `${setup.name || 'setup'}_Position_${scene.name || '1'}_floor`.replace(/[^a-z0-9_\-]+/gi, '_');
-        App.dom.downloadBlob(`${safeName}.png`, blob);
+        savePng(`${safeName}.png`, blob);
       }, 'image/png');
     },
 
@@ -305,7 +338,7 @@ App.floorPngExport = (function () {
       canvas.toBlob(blob => {
         if (!blob) { App.toast('Could not generate PNG.', true); return; }
         const safeName = 'disguise_test_points_' + points.map(p => `${p.x}_${p.y}`).join('-');
-        App.dom.downloadBlob(`${safeName.replace(/[^a-z0-9_\-.]+/gi, '_')}.png`, blob);
+        savePng(`${safeName.replace(/[^a-z0-9_\-.]+/gi, '_')}.png`, blob);
       }, 'image/png');
     }
   };

@@ -129,6 +129,16 @@ theorising about the connection — every connection bug so far failed
   the camera tracker — the same single assignment as Live Tracking's
   Link/Release camera button, so the two always agree; it's duplicated onto
   the row so linking doesn't mean scrolling past the Live Tracking panel.
+- **Export Floor PNG writes to `Z:\App Generated PNG`, not to the browser's
+  downloads** (`server.py --png-dir`). A page can't write to a drive path —
+  only a download, or a save dialog steered by hand every time — so the PNG
+  is POSTed to `/api/floor-png` and written by `server.py`, which can see the
+  mapped drive. It therefore lands on the machine running `server.py`, not on
+  the tablet that pressed the button; that's the point, since the shared
+  drive is what Disguise reads. Re-exporting overwrites (the filename encodes
+  setup + position, so it's the same plan redrawn). If the folder is
+  unreachable the export falls back to a normal download and the toast says
+  so — a missing drive mapping costs the shared folder, never the export.
 - Setups are `.json` files in `--setups-dir`, shared by every device on the
   network. Filenames come from the setup name; identity is the `id` inside.
   **GitHub Sync is a manual backup of that folder**, not the primary store.

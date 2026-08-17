@@ -38,6 +38,7 @@ import threading
 import time
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 from websockets.sync.server import serve as ws_serve
 
@@ -579,6 +580,46 @@ def write_setup(setup):
     return target
 
 
+# --- Exported floor PNGs -----------------------------------------------
+#
+# A browser page cannot write to a path like Z:\App Generated PNG -- the most
+# it can do is hand the file to the download folder, or open a save dialog the
+# operator has to steer every time. So the export is POSTed here instead and
+# written by this process, which is an ordinary Windows program and can see
+# the mapped drive. The app falls back to a normal download if this fails, so
+# a missing drive costs the shared folder, never the export itself.
+PNG_DIR = None
+
+# The studio's shared drop folder for generated floor plans, so Export Floor
+# PNG lands somewhere Disguise can pick it up without anyone moving a file.
+# A drive letter rather than a repo-relative path because that IS the studio's
+# location; --png-dir overrides it anywhere that mapping doesn't exist.
+DEFAULT_PNG_DIR = r"Z:\App Generated PNG"
+
+# Same reasoning as SAFE_ID: the filename comes from the client (it's built
+# from the setup/position names), so it's scrubbed here rather than trusted.
+# Path separators and .. can't survive this, and the suffix is forced.
+def png_filename(raw):
+    # Suffix first, THEN the scrub: the other order turns the dot into an
+    # underscore before the strip can see it, and every file comes out named
+    # "..._png.png".
+    stem = re.sub(r'\.png$', '', raw or '', flags=re.I)
+    cleaned = re.sub(r'[^A-Za-z0-9 _()-]+', '_', stem).strip()
+    return f"{(cleaned or 'floor')[:120]}.png"
+
+
+def write_floor_png(raw_name, data):
+    target = PNG_DIR / png_filename(raw_name)
+    # Overwritten deliberately, unlike write_setup's disambiguation: the name
+    # encodes setup + position, so a re-export is the SAME plan redrawn, and
+    # whoever loaded it into Disguise wants the file they already pointed at
+    # to be the current one -- not a folder slowly filling with "... (2).png".
+    tmp = target.with_suffix('.png.tmp')
+    tmp.write_bytes(data)
+    tmp.replace(target)
+    return target
+
+
 class QuietStaticHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -622,6 +663,30 @@ class QuietStaticHandler(SimpleHTTPRequestHandler):
         if not path:
             return self._error(404, 'No such setup')
         return self._send_json(read_setup_file(path))
+
+    def do_POST(self):
+        if self.path.split('?', 1)[0] != '/api/floor-png':
+            return self._error(404, 'Not found')
+        if PNG_DIR is None:
+            return self._error(503, 'No PNG folder configured')
+        name = parse_qs(urlparse(self.path).query).get('name', [''])[0]
+        length = int(self.headers.get('Content-Length') or 0)
+        if length <= 0:
+            return self._error(400, 'Empty body')
+        data = self.rfile.read(length)
+        if not data.startswith(b'\x89PNG\r\n\x1a\n'):
+            return self._error(400, 'Body is not a PNG')
+        try:
+            # Created here rather than only at startup: this is typically a
+            # mapped network drive, which can be absent when the server boots
+            # (or vanish and come back) without that being permanent.
+            PNG_DIR.mkdir(parents=True, exist_ok=True)
+            path = write_floor_png(name, data)
+        except OSError as e:
+            # The browser turns this into "saved to your downloads instead",
+            # so the message needs to say WHY the folder was unusable.
+            return self._error(500, f'Could not write to {PNG_DIR}: {e}')
+        return self._send_json({'ok': True, 'path': str(path)})
 
     def do_PUT(self):
         if not self.path.split('?', 1)[0].startswith('/api/setups'):
@@ -678,6 +743,13 @@ def main():
              "to back up. Created if it doesn't exist.",
     )
     parser.add_argument(
+        "--png-dir", default=DEFAULT_PNG_DIR,
+        help="Folder that Export Floor PNG writes into (default: %(default)s). The browser "
+             "can't write to a drive path itself, so the export is POSTed to this server and "
+             "saved here. Created if it doesn't exist; if it can't be (drive not mapped), the "
+             "export falls back to an ordinary browser download.",
+    )
+    parser.add_argument(
         "--no-gui", action="store_true",
         help="Don't open the Start/Stop control window; run console-only (also the automatic "
              "fallback if the window can't be opened).",
@@ -724,7 +796,7 @@ def main():
         connection_timeout=args.connection_timeout,
     )
 
-    global SETUPS_DIR
+    global SETUPS_DIR, PNG_DIR
     # `is None` rather than `or`: an explicit --name-map "" means "no names,
     # show raw ids", which shouldn't silently fall back to the defaults.
     name_map = DEFAULT_NAME_MAP if args.name_map is None else args.name_map
@@ -733,10 +805,23 @@ def main():
     SETUPS_DIR = Path(args.setups_dir).expanduser().resolve()
     SETUPS_DIR.mkdir(parents=True, exist_ok=True)
 
+    # NOT resolve()d and not fatal if it can't be created: this is normally a
+    # mapped network drive, and resolving an absent Z:\ can raise or silently
+    # rewrite the path against the current directory. A studio machine without
+    # the mapping should still get a working app -- exports just fall back to
+    # the browser's download folder, which the POST handler's error says.
+    PNG_DIR = Path(args.png_dir).expanduser()
+    png_note = ''
+    try:
+        PNG_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        png_note = f'  (unavailable: {e} -- exports will fall back to browser downloads)'
+
     httpd = ThreadingHTTPServer((args.host, args.http_port), QuietStaticHandler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     print(f"Serving app at         http://localhost:{args.http_port}/")
     print(f"Saving setups to       {SETUPS_DIR}")
+    print(f"Saving floor PNGs to   {PNG_DIR}{png_note}")
 
     # The WS/HTTP servers come up immediately regardless of whether Motive
     # is reachable -- the Motive connection attempt (which can stall, see
