@@ -133,29 +133,55 @@ that's no longer true, every stored `rotationDeg` needs +180 applied once.
 Position and height are verified against the real studio (see
 `js/motive/motiveTransform.js`'s header).
 
-**Live rotation/tilt: calibrated 2026-08-15** against "Camera Tracker", the
-general-purpose production camera rigid body (3 markers: marker 1 forward,
-markers 2/3 right/left) — `App.motiveCalibration.liveForwardAxis = '+z'`,
-`liveRotationOffsetDeg = -9.6` (see that file's comments for the
-derivation). An earlier pass that same day against the "Arrow" T-bar
-reference tracker found different values (`'-z'`, `0.5`) — expected, since
-each is a *separately created* Motive asset with its own arbitrary local
-frame; the T-bar numbers are kept as a worked example, not a fallback. If
-Camera Tracker is ever deleted and recreated in Motive (not just renamed),
-both values need re-deriving.
+**Live rotation/tilt is calibrated per tracker, not globally.** Every Motive
+asset gets its own arbitrary local frame at creation, so each needs its own
+values — `App.motiveCalibration.PROFILES` holds the two derived so far:
+
+| Tracker | Forward axis | Rotation offset | Height offset |
+|---|---|---|---|
+| Camera Tracker (3 markers: 1 forward, 2/3 right/left) | `+z` | `-9.6°` | `+0.01m` |
+| T-bar ("Arrow" reference tracker, rectangular props) | `-z` | `+0.5°` | `0` |
+
+Both axes confirmed live 2026-08-17. This *was* one global set of fields,
+which broke the moment a second tracker went live: Camera Tracker's
+calibration got applied to T-bar's frames too, and the T-bar-driven prop
+pointed the wrong way. If a tracker is ever deleted and recreated in Motive
+(renaming is fine), its profile needs re-deriving.
+
+**Profiles are applied by hand, per row.** `PROFILES` is keyed by real asset
+name, but rigid bodies currently arrive named `"1"`/`"2"` (see *Rigid body
+names* below), so the right profile can't be matched automatically — pick it
+from the row's *apply profile…* dropdown in the Live Tracking panel. That
+copies the values onto whatever name the row has and persists them; editing
+the row afterwards doesn't touch the profile. An unrecognised tracker
+deliberately defaults to `'+y'` (Motive's up axis) so it reads as *obviously
+uncalibrated* — jittering rotation, tilt pinned near ±90° — rather than
+half-working.
+
+## Rigid body names
+
+**Rigid bodies show up as bare numeric ids (`"1"`), not their Motive asset
+names**, because `server.py`'s `refresh_names()` is disabled — see its
+comment. Sending `REQUEST_MODEL_DEF` reliably stopped *all* frames from
+arriving on Motive 3.5.0.1 Beta 1 / NatNet 4.5 (confirmed by A/B test on a
+clean single-process run). `_patch_natnet_lenient_names()` at the top of
+`server.py` fixed one real crash in that path (a marker-set name containing
+non-UTF-8 bytes aborted the whole descriptors parse), but frames still
+didn't flow, so the request is left unsent and the root cause is unresolved.
+Re-test on a non-critical session before re-enabling.
 
 **A single static reading can't calibrate `liveForwardAxis` — you need
 motion, and a recorded capture's "biggest range" can ALSO mislead you.**
-`App.motiveCalibration.liveForwardAxis` says which of a rigid body's local
-axes points the way it faces, which Motive assigns arbitrarily per-asset at
-creation and can't be derived from a single frame. Two traps, both hit
-during Camera Tracker's first (wrong) calibration pass:
+A profile's `liveForwardAxis` says which of a rigid body's local axes points
+the way it faces, which Motive assigns arbitrarily per-asset at creation and
+can't be derived from a single frame. Two traps, both hit during Camera
+Tracker's first (wrong) calibration pass:
 
 1. Checking "does tilt read ≈0° while level" only rules out the
    near-vertical axis — it can't distinguish the true forward axis from the
    object's *other* horizontal (side/roll) axis, since both read ~0° at
-   rest, and `liveRotationOffsetDeg` can make either one's static heading
-   match a known target by coincidence.
+   rest, and a rotation offset can make either one's static heading match a
+   known target by coincidence.
 2. Picking whichever axis shows the widest tilt range across a *recorded*
    capture isn't safe either, if the motion during that capture wasn't a
    clean, bounded pitch. A real hand-held motion that overshoots the

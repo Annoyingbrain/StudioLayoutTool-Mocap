@@ -12,17 +12,17 @@
 //
 // Rotation: Motive solves each rigid body's own orientation quaternion
 // on-device, using whichever local axes were set when the rigid body asset
-// was created in Motive -- which one counts as "forward" is per-asset and
-// configured in App.motiveCalibration.liveForwardAxis (see that file and
-// motive_axis_calibrate.py for how it's derived). The resulting direction is
-// then mapped to a rotationDeg using this app's OWN "local -Y = front"
-// convention (js/utils/geometry.js's ROTATION CONVENTION note) --
-// App.motiveCalibration.liveRotationCalibratedOffsetDeg absorbs whatever
-// fixed offset is left once the axis is right, and
-// liveRotationUserOffsetDeg (the Live Tracking panel's field) is a further,
-// day-to-day adjustment on top of that, kept separate so it defaults to 0
-// instead of carrying the calibrated value around as something that looks
-// editable per-placement.
+// was created in Motive -- which one counts as "forward" is PER-ASSET (each
+// rigid body's own entry in App.motiveCalibration.trackers, keyed by its
+// current name -- see that file and motive_axis_calibrate.py for how a
+// value is derived). The resulting direction is then mapped to a
+// rotationDeg using this app's OWN "local -Y = front" convention
+// (js/utils/geometry.js's ROTATION CONVENTION note) --
+// liveRotationCalibratedOffsetDeg absorbs whatever fixed offset is left
+// once the axis is right, and liveRotationUserOffsetDeg (the Live Tracking
+// panel's per-row field) is a further, day-to-day adjustment on top of
+// that, kept separate so it defaults to 0 instead of carrying the
+// calibrated value around as something that looks editable per-placement.
 window.App = window.App || {};
 
 (function () {
@@ -49,16 +49,16 @@ window.App = window.App || {};
     '+z': { x: 0, y: 0, z: 1 }, '-z': { x: 0, y: 0, z: -1 }
   };
 
-  // Rotates the configured local forward axis
-  // (App.motiveCalibration.liveForwardAxis) by a unit quaternion (x,y,z,w),
-  // giving that axis's current direction as a Motive-space {x,y,z} unit
-  // vector -- suitable for App.motiveTransform.toAppDirection, and for
-  // reading tilt off its vertical component.
+  // Rotates the given tracker's configured local forward axis
+  // (calibration.liveForwardAxis) by a unit quaternion (x,y,z,w), giving
+  // that axis's current direction as a Motive-space {x,y,z} unit vector --
+  // suitable for App.motiveTransform.toAppDirection, and for reading tilt
+  // off its vertical component.
   //
   // v' = v + 2 * qv x (qv x v + w*v), the standard quaternion-vector
   // rotation, so any axis works rather than just a hardcoded one.
-  function rotateForwardAxis(q) {
-    const v = AXIS_VECTORS[App.motiveCalibration.liveForwardAxis] || AXIS_VECTORS['+z'];
+  function rotateForwardAxis(calibration, q) {
+    const v = AXIS_VECTORS[calibration.liveForwardAxis] || AXIS_VECTORS['+z'];
     const tx = q.y * v.z - q.z * v.y + q.w * v.x;
     const ty = q.z * v.x - q.x * v.z + q.w * v.y;
     const tz = q.x * v.y - q.y * v.x + q.w * v.z;
@@ -83,23 +83,24 @@ window.App = window.App || {};
   // rotateForwardAxis returns a unit vector, asin of that is the angle.
   // Independent of which app-side axis counts as "front" (that only affects
   // heading, via directionToRotationDeg above) -- tilt is calibrated per
-  // App.motiveCalibration.liveForwardAxis regardless.
+  // tracker's own liveForwardAxis regardless.
   function forwardTiltDeg(forward) {
     return Math.asin(Math.max(-1, Math.min(1, forward.y))) * 180 / Math.PI;
   }
 
   function applyToEntity(assignment, rb) {
+    const calibration = App.motiveCalibration.forTracker(rb.name);
     const world = App.motiveTransform.toAppWorld(rb.pos);
     const patch = {
       x: Math.round(world.x * 1000) / 1000,
       y: Math.round(world.y * 1000) / 1000,
       positionSource: 'measured'
     };
-    const forward = rotateForwardAxis(rb.quat);
+    const forward = rotateForwardAxis(calibration, rb.quat);
     const dirApp = App.motiveTransform.toAppDirection(forward);
     const rotationDeg = directionToRotationDeg(dirApp)
-      + App.motiveCalibration.liveRotationCalibratedOffsetDeg
-      + App.motiveCalibration.liveRotationUserOffsetDeg;
+      + calibration.liveRotationCalibratedOffsetDeg
+      + calibration.liveRotationUserOffsetDeg;
     patch.rotationDeg = Math.round(rotationDeg * 10) / 10;
 
     if (assignment.entityType === 'camera') {
@@ -114,7 +115,7 @@ window.App = window.App || {};
       // derived from reference-tracker MARKER positions, not a rigid body's
       // solved pivot -- see that constant's header).
       patch.heightM = Math.round((App.motiveTransform.heightFromRawY(rb.pos.y, 0)
-        + App.motiveCalibration.liveHeightOffsetM) * 1000) / 1000;
+        + calibration.liveHeightOffsetM) * 1000) / 1000;
       patch.tiltDeg = Math.round(forwardTiltDeg(forward) * 10) / 10;
       App.Store.updateCamera(assignment.entityId, patch);
     } else {

@@ -45,12 +45,62 @@ from websockets.sync.server import serve as ws_serve
 # straight from their actual submodules.
 from new_natnet_client.Client import NatNetClient, NatNetParams
 import new_natnet_client.NatNetTypes as NNT
+import new_natnet_client.Unpackers as NNU
 
 ROOT = Path(__file__).resolve().parent
 
-# How often to re-request Motive's rigid body descriptions (id -> name), so
-# a rigid body created/renamed in Motive after the bridge started still gets
-# picked up. Cheap request, no need to do it every frame.
+
+def _patch_natnet_lenient_names():
+    """new_natnet_client's model-definition parser decodes every name
+    (marker sets, rigid bodies, ...) as STRICT UTF-8. Motive can send a
+    marker SET name (confirmed 2026-08-15, not a rigid body name) containing
+    bytes that aren't valid UTF-8 -- this crashed inside the client's
+    background command task with UnicodeDecodeError, which aborted the
+    ENTIRE descriptors parse. Silent from server.py's point of view:
+    client.descriptors just stayed None forever after that, so rigid body
+    NAMES (what refresh_names() actually needs) never resolved, and every
+    rigid body fell back to displaying its bare numeric id in the UI
+    instead of its real Motive name.
+
+    The null-byte offset tracking that finds where each name ends is
+    unaffected by bad bytes (partition(b"\0") doesn't care what's in the
+    bytes) -- only the decode step needs to tolerate this, so patching
+    unpack_marker_set_description with errors="replace" (rather than the
+    library's strict default) fixes it without touching any offset math.
+    Only DataUnpackerV3_0 defines this method (DataUnpackerV4_1 inherits it
+    unmodified), so patching the one class covers both NatNet versions.
+
+    Done here at runtime rather than editing the installed package so it
+    survives a fresh `pip install -r requirements.txt`.
+    """
+    from collections import deque
+
+    @classmethod
+    def unpack_marker_set_description_lenient(cls, data):
+        offset = 0
+        name_bytes, _, _ = data[offset:].partition(b"\0")
+        offset += len(name_bytes) + 1
+        name = name_bytes.decode("utf-8", errors="replace")
+        num_markers = int.from_bytes(
+            data[offset:(offset := offset + 4)], byteorder="little", signed=True
+        )
+        markers_names = deque()
+        for _ in range(num_markers):
+            marker_name, _, _ = data[offset:].partition(b"\0")
+            offset += len(marker_name) + 1
+            markers_names.append(marker_name.decode("utf-8", errors="replace"))
+        return {
+            name: NNT.Marker_set_description(name, num_markers, tuple(markers_names))
+        }, offset
+
+    NNU.DataUnpackerV3_0.unpack_marker_set_description = unpack_marker_set_description_lenient
+
+
+_patch_natnet_lenient_names()
+
+# How often refresh_names() WOULD re-request Motive's rigid body
+# descriptions (id -> name) if it were called -- see natnet_loop's own
+# comment on why that call is currently disabled entirely.
 DESCRIPTIONS_REFRESH_SEC = 5.0
 
 # A pause in the stream (Motive switched to Edit mode, say) is normal and is
@@ -86,6 +136,25 @@ def broadcast(ws_server, message):
 def natnet_loop(client, ws_server, controller, units_to_mm):
     name_by_id = {}
 
+    # DISABLED as of 2026-08-15 -- see the call sites below. Confirmed by
+    # direct A/B test: with this called, NO frames EVER arrived (endless
+    # "Connected to Motive" -> silence -> "no frames for 10s" -> reconnect,
+    # looping forever); commenting out the calls (not this function --
+    # nothing calls it right now) immediately fixed frame delivery, on a
+    # clean install with only this process running (ruled out a second
+    # stale server.py holding the data port). _patch_natnet_lenient_names()
+    # above fixed one confirmed crash inside this same request/response path
+    # (a marker SET name -- not a rigid body name -- containing bytes that
+    # aren't valid UTF-8, which used to abort the whole descriptors parse),
+    # but frames still didn't flow afterward, so something about sending
+    # REQUEST_MODEL_DEF at all disrupts this Motive build (3.5.0.1 Beta 1 /
+    # NatNet 4.5) -- root cause not fully understood, and not worth risking
+    # working tracking to chase further. Rigid bodies fall back to their
+    # bare numeric id (e.g. "1") as their "name" without this -- the Live
+    # Tracking panel's "Set as Camera Tracker" button
+    # (App.motiveCalibration.cameraTrackerName) exists specifically because
+    # that name can't be trusted right now. Re-test carefully (on a
+    # non-critical session) before ever re-enabling the calls below.
     def refresh_names():
         try:
             client.send_request(NNT.NAT_Messages.REQUEST_MODEL_DEF, "")
@@ -95,6 +164,10 @@ def natnet_loop(client, ws_server, controller, units_to_mm):
                 name_by_id.clear()
                 for rb_id, desc in descriptors.rigid_body_description.items():
                     name_by_id[rb_id] = desc.name
+                print(f"[natnet] refreshed names: {name_by_id}", file=sys.stderr)
+            else:
+                print(f"[natnet] refresh_names got no rigid_body_description "
+                      f"(descriptors={descriptors!r})", file=sys.stderr)
         except Exception as e:
             print(f"[natnet] couldn't refresh rigid body names: {e}", file=sys.stderr)
 
@@ -122,7 +195,7 @@ def natnet_loop(client, ws_server, controller, units_to_mm):
             "rigidBodies": rigid_bodies,
         }))
 
-    refresh_names()
+    # refresh_names()  -- disabled, see that function's comment above
     last_refresh = time.time()
     last_frame = time.time()
     streaming = True
@@ -146,7 +219,7 @@ def natnet_loop(client, ws_server, controller, units_to_mm):
                 print("[natnet] frames resumed", file=sys.stderr)
                 broadcast(ws_server, json.dumps({"type": "status", "motiveStreaming": True}))
             if time.time() - last_refresh > DESCRIPTIONS_REFRESH_SEC:
-                refresh_names()
+                # refresh_names()  -- disabled, see that function's comment above
                 last_refresh = time.time()
             send_frame(mocap)
 

@@ -82,29 +82,8 @@
           <button id="btn-live-disconnect">Disconnect</button>
         </div>
         <div id="live-status" class="small muted"></div>
-        <p class="hint">Requires server.py running (see requirements.txt) -- the browser can't reach Motive on its own. Assign each incoming rigid body below to a camera or prop to drive its position/rotation live.</p>
+        <p class="hint">Requires server.py running (see requirements.txt) -- the browser can't reach Motive on its own. Assign each incoming rigid body below to a camera or prop to drive its position/rotation live. Each row has its own axis/rotation/height calibration underneath it — every Motive asset has its own local frame, so these don't share one global value. For a known tracker just pick it from <em>apply profile…</em> (Camera Tracker and T-bar are already calibrated); rows arrive named by number rather than by asset, so that pick can't happen automatically. Otherwise get the axis right first: if it's wrong, rotation jitters and tilt sits near ±90° with the object level, and no offset can fix that. "rot°" is a day-to-day adjustment ON TOP of that row's already-calibrated baseline — it defaults to 0, and 0 means "trust the calibration." Re-placing a tracker by hand naturally reads a few degrees different each time; only change this for a real, repeated discrepancy, not a one-off reading. "h(m)" only matters for a row driving a camera.</p>
         <div id="live-rigidbody-list"></div>
-        <div class="tool-row">
-          <span>Forward axis</span>
-          <select id="live-forward-axis-input" style="width: 6em;">
-            <option value="+x">+X</option>
-            <option value="-x">−X</option>
-            <option value="+y">+Y</option>
-            <option value="-y">−Y</option>
-            <option value="+z">+Z</option>
-            <option value="-z">−Z</option>
-          </select>
-        </div>
-        <div class="tool-row">
-          <span>Live rotation offset (deg)</span>
-          <input type="number" id="live-rotation-offset-input" step="0.1" style="width: 5em;">
-        </div>
-        <p class="hint">Which of the rigid body's own local axes points the way it faces — set when the asset was created in Motive. Get this right first: if it's wrong, rotation jitters and tilt sits near ±90° with the object level, and no offset can fix that. The offset field is a day-to-day adjustment ON TOP of the already-calibrated baseline, not the baseline itself — it defaults to 0, and 0 means "trust the calibration." Re-placing the tracker by hand naturally reads a few degrees different each time; only change this for a real, repeated discrepancy, not a one-off reading.</p>
-        <div class="tool-row">
-          <span>Live height offset (m)</span>
-          <input type="number" id="live-height-offset-input" step="0.001" style="width: 5em;">
-        </div>
-        <p class="hint">Added to a live camera's computed height. Corrects a constant difference between this asset's rigid-body pivot and the floor-level calibration (derived from reference-tracker markers, not necessarily the same point) — e.g. if the tracker reads a nonzero height while its markers are genuinely flush on the floor, adjust this until it reads 0 there.</p>
       </section>
 
       <section class="panel" id="framegrab-panel">
