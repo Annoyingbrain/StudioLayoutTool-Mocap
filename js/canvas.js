@@ -383,8 +383,6 @@ window.App = window.App || {};
     const tool = App.Store.getTool();
     if (tool === 'add-prop') {
       hint.textContent = 'Click on the canvas to place the prop.';
-    } else if (tool === 'add-camera') {
-      hint.textContent = 'Click on the canvas to place the camera.';
     } else if (App.Store.getSelectedCamera()) {
       hint.textContent = 'Drag to move · top handle rotates · wheel to zoom · middle-drag or space+drag to pan';
     } else {
@@ -476,13 +474,6 @@ window.App = window.App || {};
       App.Store.setTool('select');
       return;
     }
-    if (evt.button === 0 && tool === 'add-camera') {
-      const camera = App.factories.newCamera(round3(world.x), round3(world.y), scene.cameras.length);
-      App.Store.addCamera(camera);
-      App.Store.setTool('select');
-      return;
-    }
-
     if (evt.button !== 0) return;
 
     const selectedProp = App.Store.getSelectedProp();

@@ -151,20 +151,43 @@ window.App = window.App || {};
     ]);
   }
 
+  // Link/release the camera this tracker drives. The studio runs a single
+  // camera, so the common case is one button -- linked, or released so the
+  // camera can be positioned by hand (a live-driven entity owns its
+  // x/y/rotation and overwrites anything typed, hence the need to let go of
+  // it rather than fight it). A setup carrying more than one camera still
+  // gets a button each, so an older multi-camera setup doesn't silently
+  // drive only the first one.
   function renderCameraTrackerButtons(assignment) {
     const cameras = App.Store.getCameras();
-    if (!cameras.length) return dom.el('span', { class: 'small muted', text: 'No cameras in this setup' });
+    if (!cameras.length) return dom.el('span', { class: 'small muted', text: 'No camera in this setup' });
     const trackedId = assignment && assignment.entityType === 'camera' ? assignment.entityId : null;
+
+    const toggle = (camera, isTracked) => {
+      const name = cameraTrackerName();
+      if (isTracked) App.liveTracking.unassign(name);
+      else App.liveTracking.assign(name, 'camera', camera.id);
+    };
+
+    if (cameras.length === 1) {
+      const camera = cameras[0];
+      const isTracked = trackedId === camera.id;
+      return dom.el('button', {
+        class: 'tool-btn' + (isTracked ? ' active' : ''),
+        text: isTracked ? 'Release camera' : 'Link camera',
+        title: isTracked
+          ? 'Stop driving the camera from this tracker, so it can be moved by hand'
+          : 'Drive the camera from this tracker',
+        onclick: () => toggle(camera, isTracked)
+      });
+    }
+
     return dom.el('div', { class: 'tool-row', style: 'margin: 0;' }, cameras.map(c => {
       const isTracked = trackedId === c.id;
       return dom.el('button', {
         class: 'tool-btn' + (isTracked ? ' active' : ''),
-        text: isTracked ? `${c.name} (Tracked)` : c.name,
-        onclick: () => {
-          const name = cameraTrackerName();
-          if (isTracked) App.liveTracking.unassign(name);
-          else App.liveTracking.assign(name, 'camera', c.id);
-        }
+        text: isTracked ? `${c.name} (linked)` : c.name,
+        onclick: () => toggle(c, isTracked)
       });
     }));
   }

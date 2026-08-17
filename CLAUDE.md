@@ -104,10 +104,18 @@ theorising about the connection — every connection bug so far failed
 
 ## Conventions
 
-- Positions (scenes) are shots within a setup. **Cameras carry over when a
-  new position is added; props don't** — a camera is studio hardware present
+- Positions (scenes) are shots within a setup. **The camera carries over when
+  a new position is added; props don't** — a camera is studio hardware present
   for every shot, props are dressed per shot. Copies keep the same camera id
   so live assignments survive a position switch.
+- **The studio runs one camera, and every scene always has exactly one.** It's
+  created with the scene (at the studio floor centre) rather than placed by
+  hand, so there's no "add camera" tool; `ensureCamera()` tops up any setup
+  saved before that was true. The camera picker and Delete Camera are hidden
+  while there's only one — both still appear for a setup carrying several, so
+  older multi-camera setups stay editable rather than being silently
+  truncated. `Store.getInspectedCamera()` is what the inspector edits: the
+  single camera needs no selecting, several still do.
 - Setups are `.json` files in `--setups-dir`, shared by every device on the
   network. Filenames come from the setup name; identity is the `id` inside.
   **GitHub Sync is a manual backup of that folder**, not the primary store.
@@ -141,8 +149,14 @@ values — `App.motiveCalibration.PROFILES` holds the two derived so far:
 |---|---|---|---|
 | Camera Tracker (3 markers: 1 forward, 2/3 right/left) | `+z` | `0°` | `+0.01m` |
 | T-bar ("Arrow" reference tracker, rectangular props) | `-z` | `+0.5°` | `0` |
+| Triangle (circular/triangular props) | *not yet derived* | | |
 
-Both axes confirmed live 2026-08-17. This *was* one global set of fields,
+Camera Tracker and T-bar were confirmed live 2026-08-17. Triangle is named
+but has no profile yet, so it falls to the uncalibrated `'+y'` default and
+will look obviously broken (jittering heading, tilt pinned near ±90°) until
+its axis is derived — that's the intended signal, not a fault.
+
+This *was* one global set of fields,
 which broke the moment a second tracker went live: Camera Tracker's
 calibration got applied to T-bar's frames too, and the T-bar-driven prop
 pointed the wrong way. If a tracker is ever deleted and recreated in Motive
@@ -191,23 +205,27 @@ and re-acquisition transients can't be mistaken for one another. Reading
 those three off the on-screen number by eye is what produced both dead ends
 above.
 
-**Profiles are applied by hand, per row.** `PROFILES` is keyed by real asset
-name, but rigid bodies currently arrive named `"1"`/`"2"` (see *Rigid body
-names* below), so the right profile can't be matched automatically — pick it
-from the row's *apply profile…* dropdown in the Live Tracking panel. That
-copies the values onto whatever name the row has and persists them; editing
-the row afterwards doesn't touch the profile. An unrecognised tracker
-deliberately defaults to `'+y'` (Motive's up axis) so it reads as *obviously
-uncalibrated* — jittering rotation, tilt pinned near ±90° — rather than
-half-working.
+**Profiles match on name**, so with `--name-map` set (see *Rigid body names*)
+the right one applies on its own. If a body arrives under some other name,
+the Live Tracking row's *apply profile…* dropdown copies a profile's values
+onto it and persists them; editing the row afterwards doesn't touch the
+profile. An unrecognised tracker deliberately defaults to `'+y'` (Motive's
+up axis) so it reads as *obviously uncalibrated* — jittering rotation, tilt
+pinned near ±90° — rather than half-working.
 
 ## Rigid body names
 
-**Rigid bodies show up as bare numeric ids (`"1"`), not their Motive asset
-names**, because `server.py`'s `refresh_names()` is disabled — see its
-comment. Sending `REQUEST_MODEL_DEF` reliably stopped *all* frames from
-arriving on Motive 3.5.0.1 Beta 1 / NatNet 4.5 (confirmed by A/B test on a
-clean single-process run). `_patch_natnet_lenient_names()` at the top of
+**Names come from a hardcoded id→name map, not from Motive.**
+`server.py --name-map` (default `1=Camera Tracker,2=Triangle,6=T-bar`) is what makes
+rigid bodies arrive named rather than as bare ids like `"1"` — which also
+lets the calibration profiles match automatically. Motive assigns those ids
+in its Assets pane; they survive renaming but not delete-and-recreate, so
+that's when the map needs updating.
+
+It's a stand-in because `refresh_names()` is disabled — see its comment.
+Sending `REQUEST_MODEL_DEF` reliably stopped *all* frames from arriving on
+Motive 3.5.0.1 Beta 1 / NatNet 4.5 (confirmed by A/B test on a clean
+single-process run). `_patch_natnet_lenient_names()` at the top of
 `server.py` fixed one real crash in that path (a marker-set name containing
 non-UTF-8 bytes aborted the whole descriptors parse), but frames still
 didn't flow, so the request is left unsent and the root cause is unresolved.

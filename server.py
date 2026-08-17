@@ -103,6 +103,35 @@ _patch_natnet_lenient_names()
 # comment on why that call is currently disabled entirely.
 DESCRIPTIONS_REFRESH_SEC = 5.0
 
+# Stand-in for that disabled lookup: rigid body id -> name, so the browser
+# sees "Camera Tracker" rather than "1". Worth doing beyond cosmetics --
+# js/motive/motiveCalibration.js keys its calibration PROFILES by name, so
+# with these set the right profile applies automatically instead of needing
+# to be picked by hand per row.
+#
+# Motive assigns these ids in its Assets pane, and they only change if a
+# rigid body is deleted and re-created (renaming doesn't). Override with
+# --name-map when they do, e.g. --name-map "3=Camera Tracker,4=T-bar".
+DEFAULT_NAME_MAP = {1: "Camera Tracker", 2: "Triangle", 6: "T-bar"}
+
+
+def parse_name_map(text):
+    """"1=Camera Tracker,6=T-bar" -> {1: "Camera Tracker", 6: "T-bar"}."""
+    mapping = {}
+    for entry in (text or "").split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        key, sep, value = entry.partition("=")
+        if not sep or not value.strip():
+            raise argparse.ArgumentTypeError(
+                f"expected id=name entries separated by commas, got {entry!r}")
+        try:
+            mapping[int(key.strip())] = value.strip()
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"rigid body id must be a number, got {key.strip()!r}")
+    return mapping
+
 # A pause in the stream (Motive switched to Edit mode, say) is normal and is
 # waited out without touching the connection. Past this much silence, assume
 # the connection itself may be stale -- Motive can drop a client's
@@ -133,8 +162,10 @@ def broadcast(ws_server, message):
             pass
 
 
-def natnet_loop(client, ws_server, controller, units_to_mm):
-    name_by_id = {}
+def natnet_loop(client, ws_server, controller, units_to_mm, name_map=None):
+    # Seeded from --name-map rather than from Motive, since the lookup that
+    # would populate this is disabled -- see refresh_names below.
+    name_by_id = dict(name_map or {})
 
     # DISABLED as of 2026-08-15 -- see the call sites below. Confirmed by
     # direct A/B test: with this called, NO frames EVER arrived (endless
@@ -301,10 +332,11 @@ class TrackingController:
     instead of leaving it reconnecting into a void.
     """
 
-    def __init__(self, natnet_params, ws_server, units_to_mm):
+    def __init__(self, natnet_params, ws_server, units_to_mm, name_map=None):
         self.natnet_params = natnet_params
         self.ws_server = ws_server
         self.units_to_mm = units_to_mm
+        self.name_map = name_map or {}
         self._shutdown = threading.Event()   # process is exiting
         self._tracking = threading.Event()   # tracking is meant to be running
         self._status = "stopped"
@@ -382,7 +414,7 @@ class TrackingController:
                 print(f"Connected to Motive at {params.server_address} (units_to_mm={self.units_to_mm})")
                 broadcast(self.ws_server, json.dumps({"type": "status", "motiveStreaming": True}))
                 try:
-                    natnet_loop(client, self.ws_server, self, self.units_to_mm)
+                    natnet_loop(client, self.ws_server, self, self.units_to_mm, self.name_map)
                 finally:
                     # Already-disconnected clients raise here; nothing to
                     # salvage either way, and this must not stop the loop.
@@ -656,6 +688,15 @@ def main():
              "By default tracking begins immediately.",
     )
     parser.add_argument(
+        "--name-map", type=parse_name_map, default=None,
+        help="Comma-separated rigid-body id=name pairs, e.g. \"1=Camera Tracker,6=T-bar\" "
+             "(default: %s). Motive's own id->name lookup is disabled -- see natnet_loop -- so "
+             "this is what gives rigid bodies real names instead of bare numbers, which also "
+             "lets js/motive/motiveCalibration.js match its calibration profiles automatically. "
+             "Only needs changing if a rigid body is deleted and re-created in Motive."
+             % ",".join(f"{k}={v}" for k, v in DEFAULT_NAME_MAP.items()),
+    )
+    parser.add_argument(
         "--units-to-mm", type=float, default=1000.0,
         help="Multiplier converting streamed NatNet position units to millimeters, which is what "
              "js/motive/motiveTransform.js expects (default: %(default)s, i.e. NatNet's standard "
@@ -684,6 +725,11 @@ def main():
     )
 
     global SETUPS_DIR
+    # `is None` rather than `or`: an explicit --name-map "" means "no names,
+    # show raw ids", which shouldn't silently fall back to the defaults.
+    name_map = DEFAULT_NAME_MAP if args.name_map is None else args.name_map
+    print(f"Rigid body names      {name_map or '(none -- showing raw ids)'}")
+
     SETUPS_DIR = Path(args.setups_dir).expanduser().resolve()
     SETUPS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -699,7 +745,7 @@ def main():
     # browser connections.
     with ws_serve(ws_handler, args.host, args.ws_port) as ws_server:
         print(f"Live bridge WebSocket at ws://localhost:{args.ws_port}/")
-        controller = TrackingController(natnet_params, ws_server, args.units_to_mm)
+        controller = TrackingController(natnet_params, ws_server, args.units_to_mm, name_map)
         threading.Thread(target=controller.run, daemon=True).start()
         if not args.no_autostart:
             controller.start()

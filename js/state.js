@@ -49,9 +49,20 @@ App.factories = {
     };
   },
 
+  // Where a scene's camera starts: the studio's real floor centre, 4.5m out
+  // from the LED wall's north point (the same landmark js/canvas.js draws
+  // its grid from, and js/motive/motiveTransform.js calibrates against).
+  // Somewhere real and recognisable to drag from, rather than the mesh
+  // export's arbitrary (0,0).
+  DEFAULT_CAMERA_POS: { x: 5.975, y: -4.318 },
+
   // A scene is one prop layout within a setup -- e.g. different camera
   // angles or shots filmed in the same physical studio configuration.
   // Props, cameras, frame grab, and view are per-scene.
+  //
+  // Starts with one camera already placed: this studio runs a single camera
+  // and it exists whether or not anyone has drawn it, so there's no "add a
+  // camera" step (and no way to end up with none -- see ensureCamera).
   newScene(name) {
     const now = new Date().toISOString();
     return {
@@ -60,7 +71,8 @@ App.factories = {
       createdAt: now,
       updatedAt: now,
       props: [],
-      cameras: [],
+      cameras: [App.factories.newCamera(
+        App.factories.DEFAULT_CAMERA_POS.x, App.factories.DEFAULT_CAMERA_POS.y, 0)],
       frameGrab: null,    // { imageDataUrl, caption }
       view: { scale: 40, originX: 400, originY: 400 }
     };
@@ -91,11 +103,25 @@ App.Store = (function () {
   function emit() { listeners.forEach(fn => fn(setup)); }
   function currentScene() { return setup.scenes.find(s => s.id === setup.activeSceneId) || setup.scenes[0]; }
 
+  // Every scene has a camera. Setups saved before that was true (and any
+  // hand-edited .json) can arrive with none, and since there's no longer an
+  // "add camera" tool that would leave the setup permanently camera-less --
+  // so top it up on the way in rather than leaving a dead end.
+  function ensureCamera(loaded) {
+    (loaded.scenes || []).forEach(scene => {
+      if (!scene.cameras || !scene.cameras.length) {
+        scene.cameras = [App.factories.newCamera(
+          App.factories.DEFAULT_CAMERA_POS.x, App.factories.DEFAULT_CAMERA_POS.y, 0)];
+      }
+    });
+    return loaded;
+  }
+
   return {
     subscribe(fn) { listeners.push(fn); return () => listeners.splice(listeners.indexOf(fn), 1); },
 
     getSetup() { return setup; },
-    setSetup(newSetup) { setup = newSetup; selectedPropId = null; selectedCameraId = null; emit(); },
+    setSetup(newSetup) { setup = ensureCamera(newSetup); selectedPropId = null; selectedCameraId = null; emit(); },
     touch() { setup.updatedAt = new Date().toISOString(); emit(); },
 
     getScene() { return currentScene(); },
@@ -160,6 +186,17 @@ App.Store = (function () {
     getSelectedCameraId() { return selectedCameraId; },
     selectCamera(id) { selectedCameraId = id; if (id) selectedPropId = null; emit(); },
     getSelectedCamera() { return currentScene().cameras.find(c => c.id === selectedCameraId) || null; },
+
+    // The camera the inspector edits. With a single camera there's nothing
+    // to choose, so it stays editable without having to be selected on the
+    // canvas first -- selection then only drives highlighting and dragging.
+    // A setup with several cameras still needs an explicit pick, so this
+    // can't silently edit the wrong one.
+    getInspectedCamera() {
+      const cameras = currentScene().cameras;
+      if (cameras.length === 1) return cameras[0];
+      return this.getSelectedCamera();
+    },
 
     getTool() { return tool; },
     setTool(t) { tool = t; emit(); },

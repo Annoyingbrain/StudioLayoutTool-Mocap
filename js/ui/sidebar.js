@@ -190,11 +190,20 @@ window.App = window.App || {};
     });
   }
 
+  // Hidden for the single-camera case (the normal one here): a picker
+  // offering one choice is just noise, and getInspectedCamera() falls
+  // through to that camera anyway. Still rendered for a setup carrying
+  // several, which would otherwise be uneditable.
   function renderCameraPicker() {
     const scene = App.Store.getScene();
     const selectedId = App.Store.getSelectedCameraId();
     const picker = dom.qs('#cam-insp-picker');
-    if (document.activeElement === picker) return;
+    const single = scene.cameras.length <= 1;
+    picker.classList.toggle('hidden', single);
+    // Same for deleting: with one camera there'd be no way back, since
+    // there's no "add camera" tool any more.
+    dom.qs('#btn-delete-camera').classList.toggle('hidden', single);
+    if (single || document.activeElement === picker) return;
     dom.clear(picker);
     picker.appendChild(dom.el('option', { value: '', text: 'Select a camera…' }));
     scene.cameras.forEach(c => {
@@ -204,7 +213,7 @@ window.App = window.App || {};
   }
 
   function renderCameraInspector() {
-    const camera = App.Store.getSelectedCamera();
+    const camera = App.Store.getInspectedCamera();
     const empty = dom.qs('#camera-inspector-empty'), fields = dom.qs('#camera-inspector-fields');
     if (!camera) { empty.classList.remove('hidden'); fields.classList.add('hidden'); return; }
     empty.classList.add('hidden'); fields.classList.remove('hidden');
@@ -255,7 +264,7 @@ window.App = window.App || {};
   function bindCameraInspector() {
     const bind = (sel, field, parse) => {
       dom.qs(sel).addEventListener('input', e => {
-        const camera = App.Store.getSelectedCamera();
+        const camera = App.Store.getInspectedCamera();
         if (!camera) return;
         const v = parse ? parse(e.target.value) : e.target.value;
         const patch = { [field]: v };
@@ -272,7 +281,7 @@ window.App = window.App || {};
     // Blank clears it rather than storing NaN, so the floor PNG can tell
     // "no lens set" from a real value.
     dom.qs('#cam-insp-focal').addEventListener('input', e => {
-      const camera = App.Store.getSelectedCamera();
+      const camera = App.Store.getInspectedCamera();
       if (!camera) return;
       const raw = e.target.value.trim();
       const v = raw === '' ? null : parseFloat(raw);
@@ -284,13 +293,13 @@ window.App = window.App || {};
     });
 
     dom.qs('#btn-delete-camera').addEventListener('click', () => {
-      const camera = App.Store.getSelectedCamera();
+      const camera = App.Store.getInspectedCamera();
       if (!camera) return;
       if (confirm(`Delete "${camera.name}"?`)) App.Store.removeCamera(camera.id);
     });
 
     dom.qs('#btn-record-movement').addEventListener('click', () => {
-      const camera = App.Store.getSelectedCamera();
+      const camera = App.Store.getInspectedCamera();
       if (!camera) return;
       if (App.liveRecording.isRecording()) {
         const result = App.liveRecording.stop();
@@ -304,7 +313,7 @@ window.App = window.App || {};
     });
 
     dom.qs('#btn-clear-trail').addEventListener('click', () => {
-      const camera = App.Store.getSelectedCamera();
+      const camera = App.Store.getInspectedCamera();
       if (!camera) return;
       App.liveRecording.clearTrail(camera.id);
     });
