@@ -66,6 +66,44 @@ Motive's Assets pane are streamed.
 reload keeps the cached scripts and has already caused one "this feature is
 broken" report that was purely stale cache.
 
+## Tests
+
+```
+node --test "test/*.test.js"
+```
+
+**Node is needed only to run the tests — the app itself still has no build
+step and no dependencies.** The quotes matter: unquoted, the shell expands the
+glob; and `node --test test/` picks up `test/helpers/` as a test file too.
+
+The app is browser code with no module system, which is exactly what makes
+this work — every file hangs things off `window.App`, so giving a Node `vm`
+context a `window` and running the files in `index.html`'s order builds the
+whole app in-process. `test/helpers/appContext.js` does that, and hands back
+either a recording canvas (for the floor PNG) or a small duck-typed DOM shim
+(for the sidebar), so a handler can be fired and the result asserted.
+
+These exist because browser automation isn't available on the studio machine,
+so "does this actually work" was otherwise unanswerable without asking someone
+to go and click. **They verify logic, not appearance** — layout, colour and
+spacing still need a person looking at the page, after a hard refresh.
+
+Three things in the harness are load-bearing, and all three were bugs first:
+
+- **Every recorded drawing op carries a `ctxId`.** `floorPngExport.js`
+  recolours the camera icon on a *scratch* canvas, so without the id its
+  `drawImage` is indistinguishable from a real one and icon counts come out
+  one high.
+- **`Image` is stubbed to fire `onload` synchronously**, or the icon branch
+  never runs and only the wedge fallback gets tested.
+- **`appContext.js`'s file list mirrors `index.html`'s script order.** Adding
+  a script there means adding it here, or a module loads before something it
+  reads at definition time.
+
+Worth knowing that the suite is checked against deliberate mutations: putting
+the camera name back into `cameraListStructureKey`, or drawing the static icon
+for a recorded camera, each fail the tests written for them.
+
 ## How it fits together
 
 ```
