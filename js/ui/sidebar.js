@@ -274,10 +274,17 @@ window.App = window.App || {};
   // rebuilding it on every ~30Hz emit would leave that button unclickable
   // exactly while tracking is live. The measured/manual badge is the only
   // per-frame part, and it's rewritten in place below.
+  //
+  // The camera NAME is deliberately absent from this key, unlike the prop
+  // list's. Each row carries the name in an <input>, so keying on it would
+  // mean every keystroke changed the key, rebuilt the list, and destroyed
+  // the field being typed into -- the same class of bug the key exists to
+  // prevent. The name is instead written back in place below, and only when
+  // the field isn't focused.
   function cameraListStructureKey() {
     const scene = App.Store.getScene();
     return [
-      scene.cameras.map(c => `${c.id}:${c.name}:${c.color}`).join('|'),
+      scene.cameras.map(c => `${c.id}:${c.color}`).join('|'),
       App.Store.getSelectedCameraId(),
       App.motiveCalibration.cameraTrackerName,
       JSON.stringify(App.liveTracking.getAssignments())
@@ -285,6 +292,7 @@ window.App = window.App || {};
   }
 
   const cameraSrcElById = {};
+  const cameraNameElById = {};
   let lastCameraListKey = null;
 
   function renderCameraList() {
@@ -300,6 +308,12 @@ window.App = window.App || {};
         const text = measured ? 'measured' : 'manual';
         if (el.textContent !== text) el.textContent = text;
         el.className = 'prop-row-src' + (measured ? ' measured' : '');
+        // Renames from elsewhere (the inspector's Name field) still have to
+        // reach this row -- but never overwrite what someone is typing here.
+        const nameEl = cameraNameElById[c.id];
+        if (nameEl && document.activeElement !== nameEl && nameEl.value !== c.name) {
+          nameEl.value = c.name;
+        }
       });
       return;
     }
@@ -309,6 +323,7 @@ window.App = window.App || {};
     const list = dom.qs('#camera-list');
     dom.clear(list);
     Object.keys(cameraSrcElById).forEach(k => delete cameraSrcElById[k]);
+    Object.keys(cameraNameElById).forEach(k => delete cameraNameElById[k]);
 
     scene.cameras.forEach(c => {
       const srcEl = dom.el('span', {
@@ -317,12 +332,31 @@ window.App = window.App || {};
       });
       cameraSrcElById[c.id] = srcEl;
 
+      // Editable in the row itself, not just in the Inspector: with several
+      // camera positions per prop layout, naming them for the shot they
+      // cover is how you tell them apart, and that shouldn't mean selecting
+      // each one and crossing to the other panel -- on a tablet the
+      // Inspector is a collapsed panel away.
+      const nameEl = dom.el('input', {
+        class: 'prop-row-name-input',
+        type: 'text',
+        value: c.name,
+        placeholder: 'Shot name',
+        title: 'What this camera position covers — shown on the floor plan and in the CSV',
+        oninput: e => App.Store.updateCamera(c.id, { name: e.target.value }),
+        // The row selects on click; without this, putting the caret in the
+        // field (or clicking mid-word) would re-fire that and fight the edit.
+        onclick: e => e.stopPropagation(),
+        onfocus: () => App.Store.selectCamera(c.id)
+      });
+      cameraNameElById[c.id] = nameEl;
+
       const row = dom.el('div', {
         class: 'prop-row' + (c.id === selectedId ? ' selected' : ''),
         onclick: () => App.Store.selectCamera(c.id)
       }, [
         dom.el('span', { class: 'swatch', style: `background:${c.color}` }),
-        dom.el('span', { class: 'prop-row-name', text: c.name }),
+        nameEl,
         srcEl,
         renderCameraLinkButton(c)
       ]);
@@ -330,18 +364,20 @@ window.App = window.App || {};
     });
   }
 
-  // Hidden for the single-camera case (the normal one here): a picker
-  // offering one choice is just noise, and getInspectedCamera() falls
-  // through to that camera anyway. Still rendered for a setup carrying
-  // several, which would otherwise be uneditable.
+  // Hidden for the single-camera case: a picker offering one choice is just
+  // noise, and getInspectedCamera() falls through to that camera anyway.
+  // Shown as soon as a scene carries several camera positions, which would
+  // otherwise be uneditable.
   function renderCameraPicker() {
     const scene = App.Store.getScene();
     const selectedId = App.Store.getSelectedCameraId();
     const picker = dom.qs('#cam-insp-picker');
     const single = scene.cameras.length <= 1;
     picker.classList.toggle('hidden', single);
-    // Same for deleting: with one camera there'd be no way back, since
-    // there's no "add camera" tool any more.
+    // Same for deleting, even though "+ Add Camera Position" could put one
+    // back: every scene is guaranteed at least one camera (see
+    // ensureCamera), so deleting the last one is a state the rest of the app
+    // doesn't accept -- hide it rather than repair it afterwards.
     dom.qs('#btn-delete-camera').classList.toggle('hidden', single);
     if (single || document.activeElement === picker) return;
     dom.clear(picker);
@@ -430,6 +466,36 @@ window.App = window.App || {};
 
     dom.qs('#cam-insp-picker').addEventListener('change', e => {
       App.Store.selectCamera(e.target.value || null);
+    });
+
+    // Several camera positions can share one prop layout -- the same
+    // dressing shot wide, then tight, then over-shoulder. Each is a full
+    // camera entity, so it carries its own placement, lens, notes and
+    // recorded move, and each appears on the exported floor plan and CSV
+    // under whatever it's named.
+    dom.qs('#btn-add-camera').addEventListener('click', () => {
+      const cameras = App.Store.getCameras();
+      // Offset a metre to the side of the last one rather than dropped on
+      // the studio centre: stacked exactly on an existing camera it would be
+      // invisible and impossible to grab, while the centre is nowhere near
+      // wherever the crew is actually working.
+      const base = cameras.length ? cameras[cameras.length - 1] : App.factories.DEFAULT_CAMERA_POS;
+      const camera = App.factories.newCamera(base.x + 1, base.y, cameras.length);
+      // Skip names already in use rather than counting -- after a delete,
+      // length + 1 collides, and two rows both called "Camera 2" is exactly
+      // the confusion these names exist to prevent.
+      const taken = new Set(cameras.map(c => c.name));
+      let n = cameras.length + 1;
+      while (taken.has(`Camera ${n}`)) n++;
+      camera.name = `Camera ${n}`;
+
+      App.Store.addCamera(camera); // also selects it
+
+      // addCamera -> touch -> emit has already rebuilt the list, so the new
+      // row's field exists: put the caret in it so the shot name can be
+      // typed straight away rather than hunted for.
+      const nameEl = cameraNameElById[camera.id];
+      if (nameEl) { nameEl.focus(); nameEl.select(); }
     });
 
     dom.qs('#btn-delete-camera').addEventListener('click', () => {

@@ -24,7 +24,11 @@ App.factories = {
   newCamera(x, y, colorIndex) {
     return {
       id: App.makeId('camera'),
-      name: 'Camera',
+      // Numbered from the start, because a scene can hold several camera
+      // positions -- a bare "Camera" sitting next to "Camera 2" reads as an
+      // odd one out rather than the first of a set. Renamed to the shot it
+      // covers in practice (the camera list's name field).
+      name: 'Camera 1',
       x, y,
       rotationDeg: 0,
       color: App.factories.PROP_COLORS[(colorIndex || 0) % App.factories.PROP_COLORS.length],
@@ -60,9 +64,11 @@ App.factories = {
   // angles or shots filmed in the same physical studio configuration.
   // Props, cameras, frame grab, and view are per-scene.
   //
-  // Starts with one camera already placed: this studio runs a single camera
-  // and it exists whether or not anyone has drawn it, so there's no "add a
-  // camera" step (and no way to end up with none -- see ensureCamera).
+  // Starts with one camera already placed: the studio's camera exists whether
+  // or not anyone has drawn it, so a scene is never camera-less (see
+  // ensureCamera). Further CAMERA POSITIONS can be added to the same scene --
+  // one prop layout shot from several angles -- each a full camera entity
+  // with its own placement, lens and recorded move.
   newScene(name) {
     const now = new Date().toISOString();
     return {
@@ -103,10 +109,11 @@ App.Store = (function () {
   function emit() { listeners.forEach(fn => fn(setup)); }
   function currentScene() { return setup.scenes.find(s => s.id === setup.activeSceneId) || setup.scenes[0]; }
 
-  // Every scene has a camera. Setups saved before that was true (and any
-  // hand-edited .json) can arrive with none, and since there's no longer an
-  // "add camera" tool that would leave the setup permanently camera-less --
-  // so top it up on the way in rather than leaving a dead end.
+  // Every scene has at least one camera. Setups saved before that was true
+  // (and any hand-edited .json) can arrive with none, which would leave the
+  // scene with nothing to inspect and no camera to link a tracker to -- so
+  // top it up on the way in rather than leaving a dead end. More can be
+  // added on top ("+ Add Camera Position"); this only guarantees the floor.
   function ensureCamera(loaded) {
     (loaded.scenes || []).forEach(scene => {
       if (!scene.cameras || !scene.cameras.length) {

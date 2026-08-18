@@ -153,13 +153,22 @@ theorising about the connection — every connection bug so far failed
   linking a tracker to the next prop releases the previous one — that *is*
   the measure-and-move-on workflow, not a bug to guard against. Both
   trackers can be parked on different props at once.
-- **The studio runs one camera, and every scene always has exactly one.** It's
-  created with the scene (at the studio floor centre) rather than placed by
-  hand, so there's no "add camera" tool; `ensureCamera()` tops up any setup
-  saved before that was true. The camera picker and Delete Camera are hidden
-  while there's only one — both still appear for a setup carrying several, so
-  older multi-camera setups stay editable rather than being silently
-  truncated. `Store.getInspectedCamera()` is what the inspector edits: the
+- **A scene has at least one camera, and may have several camera positions.**
+  The first is created with the scene (at the studio floor centre) rather than
+  placed by hand, and `ensureCamera()` tops up any setup saved without one, so
+  a scene is never camera-less. **One prop layout is often shot from several
+  positions** — wide, then tight — so *+ Add Camera Position* adds more to the
+  scene you're already in, each a full camera entity with its own placement,
+  lens, notes and recorded move. Each carries a name (editable in the camera
+  row, not just the Inspector) which is what labels it on the exported floor
+  PNG and in the Disguise CSV, so the names are worth typing. New positions
+  are offset a metre from the last rather than dropped on the studio centre —
+  stacked exactly on an existing camera one is invisible and impossible to
+  grab. The camera picker and Delete Camera are hidden while there's only one:
+  deleting the last camera is a state the rest of the app doesn't accept.
+  **The camera-row name field is why `cameraListStructureKey` deliberately
+  omits the name** — keying on it would rebuild the list on every keystroke
+  and destroy the field being typed into. `Store.getInspectedCamera()` is what the inspector edits: the
   single camera needs no selecting, several still do. Each camera row in the
   left panel also carries a **Link/Unlink** button driving that camera from
   the camera tracker — the same single assignment as Live Tracking's

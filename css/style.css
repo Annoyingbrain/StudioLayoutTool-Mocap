@@ -173,6 +173,19 @@ label input[type="color"] { padding: 2px; height: 30px; }
 .prop-row.selected { border-color: var(--accent); background: rgba(77,166,255,0.08); }
 .prop-row .swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
 .prop-row .prop-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A camera's name, editable in the row itself (js/ui/sidebar.js). Styled to
+   read as the row's label rather than a form field -- borderless until
+   hovered or focused -- so a list of camera positions doesn't become a wall
+   of input boxes, while still being obviously typeable once reached for. */
+.prop-row .prop-row-name-input {
+  flex: 1; min-width: 0;
+  font: inherit; color: inherit;
+  background: none; border: 1px solid transparent; border-radius: 3px;
+  padding: 2px 4px;
+}
+.prop-row .prop-row-name-input:hover { border-color: var(--border); }
+.prop-row .prop-row-name-input:focus { border-color: var(--accent); background: var(--panel); outline: none; }
+.prop-row .prop-row-name-input::placeholder { color: var(--muted); }
 .prop-row .prop-row-src { font-size: 12px; padding: 3px 7px; border-radius: 3px; border: 1px solid var(--border); color: var(--muted); flex-shrink: 0; }
 .prop-row .prop-row-src.measured { color: var(--accent); border-color: var(--accent); }
 /* The "measure with this tracker" / camera link buttons. The prop name gives
@@ -274,6 +287,10 @@ label input[type="color"] { padding: 2px; height: 30px; }
      that is itself a tap target, so 40px each would make every row ~56px
      tall and push the list off screen. 32px still clears the ~9mm guideline. */
   .prop-row .prop-row-link { min-height: 32px; padding: 6px 12px; }
+  /* Not caught by the `label input` rule above (this one isn't in a label),
+     but it still needs 16px: below that, iOS Safari zooms the whole page in
+     on focus, and getting back out mid-shoot is a fight. */
+  .prop-row .prop-row-name-input { font-size: 16px; min-height: 32px; }
   .point-status-row { padding: 8px 6px; }
 }
 
