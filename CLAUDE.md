@@ -175,6 +175,36 @@ theorising about the connection — every connection bug so far failed
   setup + position, so it's the same plan redrawn). If the folder is
   unreachable the export falls back to a normal download and the toast says
   so — a missing drive mapping costs the shared folder, never the export.
+- **There are two floor renderers, and they drift apart silently.**
+  `js/canvas.js` draws the screen; `js/floorPngExport.js` redraws the same
+  scene for Disguise. They share no drawing code — different coordinate
+  transforms (screen vs Disguise space), different palettes (colour vs white
+  on black) — so anything added to one has to be added to the other by hand.
+  A recorded camera move was drawn on screen but **silently missing from
+  every exported PNG** for exactly this reason: the export had no reference
+  to `trail` at all. Nothing errors when this happens; the feature simply
+  isn't in the file. When adding anything the plan should show, do both, and
+  keep the layering identical (props → trail → trail endpoints → cameras).
+  They are **not** required to show the same thing, though — see the next
+  point.
+- **On the exported PNG, a camera with a recorded move is drawn as the move
+  alone**: the path plus a Start and an End icon, with its static icon and
+  red centre dot suppressed. Drawing both was misleading rather than merely
+  redundant — after a recording the camera's stored position *is* wherever
+  the move finished, so the static icon landed almost on top of the End one
+  and read as a second camera at a fixed position that no longer means
+  anything. The red dot goes with it: a camera that moved has no single point
+  for Disguise to line up against. The name/lens caption is kept and
+  re-anchored to the End icon, because with several camera positions per
+  scene it's the only thing saying which path belongs to which camera.
+  The on-screen canvas deliberately still draws the live camera on top of its
+  trail — there the current position is live and moving, so it's the useful
+  part. Suppression keys on the path *and* its endpoints, so a hand-edited
+  setup missing endpoints degrades to the plain static icon rather than to an
+  unlabelled line.
+  Sizes in the export are given in *metres* scaled by `(scaleX+scaleY)/2`,
+  not pixels — that canvas is ~245 px/m, so an on-screen 2px line comes out
+  a hairline there.
 - Setups are `.json` files in `--setups-dir`, shared by every device on the
   network. Filenames come from the setup name; identity is the `id` inside.
   **GitHub Sync is a manual backup of that folder**, not the primary store.

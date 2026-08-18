@@ -13,6 +13,9 @@ App.floorPngExport = (function () {
   const CANVAS_W = 2944, CANVAS_H = 2304; // Disguise's floor input resolution
   const CENTER_DOT_DIAMETER_M = 0.05;
   const CAMERA_ICON_WIDTH_M = 0.5; // same real-world size as js/canvas.js's on-screen icon
+  const TRAIL_WIDTH_M = 0.04;      // recorded camera path, in metres so it scales with the floor
+  // Drops a moved camera's caption clear of the "End" text above it.
+  const END_CAPTION_CLEARANCE_PX = 24;
 
   // Same body icon as js/canvas.js (separate Image instance -- this module
   // has no access to canvas.js's private one), recolored solid white via
@@ -106,11 +109,17 @@ App.floorPngExport = (function () {
     return off;
   }
 
-  function drawCamera(ctx, toPx, scaleX, scaleY, camera) {
-    const centerPx = toPx(toDisguise(camera.x, camera.y));
-    const shapePx = App.geometry.cameraShapeWorldPoints(camera).map(p => toPx(toDisguise(p.x, p.y)));
+  // Draws just the camera body icon (white silhouette, or the plain wedge
+  // fallback while the PNG loads) at an arbitrary { x, y, rotationDeg } --
+  // shared between the real camera entity (drawCamera) and the position
+  // snapshots at a recorded trail's start/end (drawCameraTrailEndpoint),
+  // which aren't full camera objects. Mirrors js/canvas.js's
+  // drawCameraIconShape, which was split out for exactly the same reason.
+  function drawCameraIconShape(ctx, toPx, scaleX, scaleY, pose, alpha) {
+    const centerPx = toPx(toDisguise(pose.x, pose.y));
 
     ctx.save();
+    ctx.globalAlpha = alpha == null ? 1 : alpha;
     if (cameraIconLoaded) {
       // Lens points along the icon's own +X (right) as drawn -- rotate to
       // match the screen-space direction of the camera's local -Y (forward
@@ -118,7 +127,7 @@ App.floorPngExport = (function () {
       // same way js/canvas.js's drawCameraIconShape does: project a
       // world-space forward point through this export's own toDisguise/toPx
       // pipeline and take the angle to it.
-      const forwardWorld = App.geometry.rotatePoint(camera.x, camera.y - 0.3, camera.x, camera.y, camera.rotationDeg);
+      const forwardWorld = App.geometry.rotatePoint(pose.x, pose.y - 0.3, pose.x, pose.y, pose.rotationDeg);
       const forwardPx = toPx(toDisguise(forwardWorld.x, forwardWorld.y));
       const angle = Math.atan2(forwardPx.y - centerPx.y, forwardPx.x - centerPx.x);
       const w = CAMERA_ICON_WIDTH_M * ((scaleX + scaleY) / 2);
@@ -135,6 +144,7 @@ App.floorPngExport = (function () {
       ctx.rotate(angle);
       ctx.drawImage(whiteCameraIcon(w, h), -w / 2, -h / 2, w, h);
     } else {
+      const shapePx = App.geometry.cameraShapeWorldPoints(pose).map(p => toPx(toDisguise(p.x, p.y)));
       ctx.beginPath();
       shapePx.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
       ctx.closePath();
@@ -142,21 +152,65 @@ App.floorPngExport = (function () {
       ctx.fill();
     }
     ctx.restore();
+    return centerPx;
+  }
 
+  // A recorded camera move (js/motive/liveRecording.js) drawn as a path on
+  // the floor. The on-screen canvas has always drawn this and the export
+  // silently didn't, so a plan handed to the crew showed only where the
+  // camera ended up, not the move itself.
+  //
+  // Width is given in metres, not pixels, because this canvas is roughly
+  // 245 px/m -- the on-screen 2px line would come out hairline here. White
+  // like everything else in this export, but a stroked line rather than a
+  // filled silhouette, so it can't be mistaken for a prop footprint.
+  function drawCameraTrail(ctx, toPx, scaleX, scaleY, camera) {
+    const pts = camera.trail.map(p => toPx(toDisguise(p.x, p.y)));
+    if (pts.length < 2) return;
     ctx.save();
-    ctx.fillStyle = '#ff0000';
+    ctx.strokeStyle = '#ffffff';
+    ctx.globalAlpha = 0.75;
+    ctx.lineWidth = TRAIL_WIDTH_M * ((scaleX + scaleY) / 2);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
     ctx.beginPath();
-    const dotR = (CENTER_DOT_DIAMETER_M / 2) * (scaleX + scaleY) / 2;
-    ctx.arc(centerPx.x, centerPx.y, dotR, 0, Math.PI * 2);
-    ctx.fill();
+    pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.stroke();
     ctx.restore();
+  }
 
-    // Anchored to the icon's own (rotation-independent) extent rather than
-    // the rotated wedge's bounding box -- otherwise the label's distance
-    // from the camera changes with heading, and at some rotations lands on
-    // top of the icon.
+  // A camera icon at the trail's start/end -- semi-transparent so it reads
+  // as a snapshot along the path rather than the camera's real position.
+  // Deliberately gets no red centre dot: those mark actual entity centres
+  // for lining the plan up in Disguise, and a snapshot isn't one.
+  function drawCameraTrailEndpoint(ctx, toPx, scaleX, scaleY, pose, label) {
+    const centerPx = drawCameraIconShape(ctx, toPx, scaleX, scaleY, pose, 0.55);
     const iconHalfPx = (CAMERA_ICON_WIDTH_M * ((scaleX + scaleY) / 2)) / 2;
-    const bottomPx = centerPx.y + iconHalfPx;
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 26px Segoe UI, Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(label, centerPx.x, centerPx.y + iconHalfPx * 0.6);
+    ctx.restore();
+    // Returned so buildCanvas can hang the camera's caption off the End one.
+    return centerPx;
+  }
+
+  // The camera's name + lens/height caption. Split out of drawCamera because
+  // it has to follow whichever mark actually represents the camera on the
+  // plan: its static icon normally, or the END of a recorded move, since a
+  // camera that moved has no single position to caption. With several camera
+  // positions in one scene this caption is the only thing saying which path
+  // belongs to which camera, so it is never dropped.
+  //
+  // Anchored to the icon's own (rotation-independent) extent rather than the
+  // rotated wedge's bounding box -- otherwise the caption's distance from the
+  // camera changes with heading, and at some rotations lands on top of it.
+  function drawCameraLabel(ctx, centerPx, scaleX, scaleY, camera, extraOffsetPx) {
+    const iconHalfPx = (CAMERA_ICON_WIDTH_M * ((scaleX + scaleY) / 2)) / 2;
+    const bottomPx = centerPx.y + iconHalfPx + (extraOffsetPx || 0);
     ctx.save();
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 30px Segoe UI, Arial';
@@ -176,6 +230,23 @@ App.floorPngExport = (function () {
       ctx.fillText(details.join('   '), centerPx.x, bottomPx + 46);
     }
     ctx.restore();
+  }
+
+  // A camera at rest: the icon, the red centre marker Disguise lines up
+  // against, and the caption. NOT used for a camera carrying a recorded
+  // move -- see hasRecordedMove in buildCanvas.
+  function drawCamera(ctx, toPx, scaleX, scaleY, camera) {
+    const centerPx = drawCameraIconShape(ctx, toPx, scaleX, scaleY, camera);
+
+    ctx.save();
+    ctx.fillStyle = '#ff0000';
+    ctx.beginPath();
+    const dotR = (CENTER_DOT_DIAMETER_M / 2) * (scaleX + scaleY) / 2;
+    ctx.arc(centerPx.x, centerPx.y, dotR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    drawCameraLabel(ctx, centerPx, scaleX, scaleY, camera, 0);
   }
 
   function buildCanvas(setup, scene) {
@@ -198,7 +269,31 @@ App.floorPngExport = (function () {
     });
 
     scene.props.forEach(p => drawProp(ctx, toPx, scaleX, scaleY, p));
-    scene.cameras.forEach(c => drawCamera(ctx, toPx, scaleX, scaleY, c));
+
+    // A camera that was RECORDED is represented by the move alone -- the path
+    // plus a Start and an End icon -- and its static icon is suppressed.
+    // Drawing both was actively misleading: after a recording the camera's
+    // stored position is wherever the move finished, so the static icon
+    // landed almost on top of the End one, reading as a second camera and
+    // implying a fixed position that no longer means anything. The red centre
+    // dot goes with it, for the same reason -- a camera that moved has no
+    // single point for Disguise to line up against.
+    //
+    // Keyed on the endpoints as well as the path, not the path alone:
+    // liveRecording.js always writes the pair together, so requiring both
+    // means a hand-edited setup missing them degrades to the plain static
+    // icon rather than to an unlabelled line.
+    const hasRecordedMove = c => !!(c.trail && c.trail.length > 1 && c.trailEndpoints);
+
+    // Same layering as js/canvas.js: paths behind the endpoint snapshots.
+    scene.cameras.forEach(c => { if (hasRecordedMove(c)) drawCameraTrail(ctx, toPx, scaleX, scaleY, c); });
+    scene.cameras.forEach(c => {
+      if (!hasRecordedMove(c)) return;
+      drawCameraTrailEndpoint(ctx, toPx, scaleX, scaleY, c.trailEndpoints.start, 'Start');
+      const endPx = drawCameraTrailEndpoint(ctx, toPx, scaleX, scaleY, c.trailEndpoints.end, 'End');
+      drawCameraLabel(ctx, endPx, scaleX, scaleY, c, END_CAPTION_CLEARANCE_PX);
+    });
+    scene.cameras.forEach(c => { if (!hasRecordedMove(c)) drawCamera(ctx, toPx, scaleX, scaleY, c); });
 
     ctx.save();
     ctx.fillStyle = '#ffffff';
