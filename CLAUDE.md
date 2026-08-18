@@ -21,6 +21,42 @@ A small Tk window offers Start/Stop Tracking so the bridge can be parked
 while Motive sits in Edit mode (`--no-gui` for console-only, `--no-autostart`
 to begin parked).
 
+## Using it from another device
+
+Both servers bind `--host` (`0.0.0.0` by default), so **any tablet or laptop
+on the same network can just open `http://<this-machine's-IP>:8000/`** — no
+extra flag, no proxy. The startup banner and the control window both print
+that exact URL (`lan_addresses()`), because "localhost" is the one address
+that cannot work from another device and having to go and look the IP up was
+the entire obstacle. Link-local `169.254.x.x` addresses are filtered out —
+this machine has three NICs that self-assign one, and none of them is
+reachable from the house network.
+
+Live Tracking works from those devices too: the browser derives the bridge
+URL from whatever host it loaded the page from, so a tablet on the LAN URL
+gets `ws://<same-IP>:8001` without anyone typing it. The `:8001` in that
+default is hardcoded browser-side, so a non-default `--ws-port` has to be
+typed into the Bridge URL field by hand.
+
+What each device does *not* share:
+
+- **Setups are shared** — they're files on the server, so every device sees
+  the same list. But there's no locking or merge: saves are atomic (temp file
+  + replace, so a file is never half-written), yet two devices editing the
+  same setup means **the last one to save silently wins**. Work on different
+  setups, or one device at a time.
+- **Motive calibration and the GitHub token are per-browser** (localStorage),
+  so they don't follow a device onto the network. The calibration *profiles*
+  ship in the code and match on name, so a fresh tablet still tracks Camera
+  Tracker and T-bar correctly — it's only day-to-day per-row tweaks that stay
+  behind on the machine where they were typed.
+- **Export Floor PNG always lands on the machine running `server.py`**, not
+  on the tablet that pressed it — see the note under *Conventions*, that's
+  the intended behaviour.
+
+Windows Firewall is what blocks this when it doesn't work; it's currently
+disabled on all three profiles on this machine, so nothing needed opening.
+
 Motive side: Streaming pane → **NatNet enabled**, Transmission Type
 **Multicast** (its default, and shared with any other NatNet client such as
 Unreal — changing it affects them too). Only rigid bodies *ticked* in

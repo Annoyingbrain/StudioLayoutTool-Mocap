@@ -33,6 +33,7 @@
 import argparse
 import json
 import re
+import socket
 import sys
 import threading
 import time
@@ -49,6 +50,49 @@ import new_natnet_client.NatNetTypes as NNT
 import new_natnet_client.Unpackers as NNU
 
 ROOT = Path(__file__).resolve().parent
+
+
+def lan_addresses():
+    """This machine's LAN IPv4 addresses, the one carrying the default route
+    first. Printed at startup and shown in the control window so the URL to
+    type on a tablet doesn't have to be looked up -- "localhost" is useless
+    on any device other than this one, and that was the only address the
+    banner used to name.
+
+    169.254.x.x is filtered out deliberately: Windows self-assigns those to
+    NICs with no DHCP lease (this studio machine has three such adapters,
+    including the camera network), and they are never the address another
+    device on the house network can reach.
+    """
+    found = []
+
+    def keep(ip):
+        if not ip or ip.startswith('127.') or ip.startswith('169.254.'):
+            return
+        if ip not in found:
+            found.append(ip)
+
+    # Which local interface would be used to reach off-box. UDP, so nothing
+    # is actually sent and the address needn't be reachable -- it only makes
+    # the OS pick a route, which is what names the primary adapter.
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('8.8.8.8', 80))
+        keep(s.getsockname()[0])
+    except OSError:
+        pass
+    finally:
+        s.close()
+
+    # Everything else the host resolves to, so a machine with no default
+    # route (or a second studio NIC) still gets its address listed.
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            keep(info[4][0])
+    except OSError:
+        pass
+
+    return found
 
 
 def _patch_natnet_lenient_names():
@@ -446,7 +490,7 @@ STATUS_TEXT = {
 }
 
 
-def run_gui(controller, http_port):
+def run_gui(controller, http_port, lan_ips=()):
     """Small always-available control window (tkinter ships with Python, so
     this adds no dependency). Must own the main thread -- Tk is not
     thread-safe and misbehaves when driven from a worker."""
@@ -461,8 +505,30 @@ def run_gui(controller, http_port):
 
     tk.Label(frame, text="Studio Layout Tool - Live Motive Bridge",
              font=("Segoe UI", 11, "bold")).pack(anchor="w")
-    tk.Label(frame, text=f"App: http://localhost:{http_port}/",
-             font=("Segoe UI", 9), fg="#555555").pack(anchor="w", pady=(2, 10))
+    tk.Label(frame, text=f"On this machine: http://localhost:{http_port}/",
+             font=("Segoe UI", 9), fg="#555555").pack(anchor="w", pady=(2, 0))
+
+    # The address a tablet or laptop has to open. Shown here because this
+    # window is the only thing on screen once the console scrolls away, and
+    # "localhost" is the one address that cannot work from another device.
+    # A read-only Entry rather than a Label so it can be selected and copied
+    # -- an IP read off a screen and retyped by hand is a transcription bug
+    # waiting to happen.
+    if lan_ips:
+        tk.Label(frame, text="From other devices on this network:",
+                 font=("Segoe UI", 9), fg="#555555").pack(anchor="w", pady=(6, 0))
+        for ip in lan_ips:
+            url = tk.Entry(frame, width=30, font=("Segoe UI", 10, "bold"),
+                           relief="flat", fg="#1a5fb4", readonlybackground=frame["bg"],
+                           borderwidth=0)
+            url.insert(0, f"http://{ip}:{http_port}/")
+            url.config(state="readonly")
+            url.pack(anchor="w")
+    else:
+        tk.Label(frame, text="No network address found - other devices can't reach this.",
+                 font=("Segoe UI", 9), fg="#b03030").pack(anchor="w", pady=(6, 0))
+
+    tk.Frame(frame, height=10).pack()
 
     status_label = tk.Label(frame, text="", font=("Segoe UI", 10, "bold"))
     status_label.pack(anchor="w", pady=(0, 12))
@@ -819,7 +885,20 @@ def main():
 
     httpd = ThreadingHTTPServer((args.host, args.http_port), QuietStaticHandler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    # Both servers bind --host (0.0.0.0 by default), so the app is already
+    # reachable from any tablet on the house network -- but only if someone
+    # knows what to type there, which is why the LAN address is printed
+    # rather than just "localhost". The browser derives the bridge URL from
+    # whatever host it loaded the page from (liveTrackingUi.js), so a device
+    # that opens the LAN URL gets a working Live Tracking panel for free.
+    lan_ips = lan_addresses()
     print(f"Serving app at         http://localhost:{args.http_port}/")
+    if lan_ips:
+        for ip in lan_ips:
+            print(f"  from other devices   http://{ip}:{args.http_port}/")
+    else:
+        print("  from other devices   (no LAN address found -- this machine looks offline)")
     print(f"Saving setups to       {SETUPS_DIR}")
     print(f"Saving floor PNGs to   {PNG_DIR}{png_note}")
 
@@ -844,7 +923,7 @@ def main():
                 controller.wait_for_shutdown()
             else:
                 try:
-                    run_gui(controller, args.http_port)
+                    run_gui(controller, args.http_port, lan_ips)
                 except Exception as e:
                     # No display, no Tk build, etc. The bridge itself is
                     # fine, so carry on headless rather than dying.
