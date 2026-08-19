@@ -38,7 +38,7 @@ function loadFiles(sandbox, files) {
 // a real one on the export, and counting icons silently comes out one high.
 // ctxId 0 is the export canvas; anything higher is scratch.
 function recordingContext(ops, ctxId) {
-  const st = { strokeStyle: null, fillStyle: null, lineWidth: null, globalAlpha: 1, font: null };
+  const st = { strokeStyle: null, fillStyle: null, lineWidth: null, globalAlpha: 1, font: null, lineDash: null };
   const rec = (op, extra) => ops.push(Object.assign({ op, ctxId }, st, extra));
   return {
     set strokeStyle(v) { st.strokeStyle = v; }, get strokeStyle() { return st.strokeStyle; },
@@ -47,7 +47,14 @@ function recordingContext(ops, ctxId) {
     set globalAlpha(v) { st.globalAlpha = v; }, get globalAlpha() { return st.globalAlpha; },
     set font(v) { st.font = v; }, get font() { return st.font; },
     textAlign: '', textBaseline: '', lineJoin: '', lineCap: '', globalCompositeOperation: '',
-    save() {}, restore() {}, translate() {}, rotate() {}, setLineDash() {},
+    save() {}, restore() {}, translate() {}, rotate() {}, setTransform() {},
+    // Recorded, not ignored: a dashed stroke is how the report's camera path
+    // is told apart from the wall and the camera wedges, which are stroked in
+    // the same colour. save()/restore() are no-ops here, so the dash is not
+    // cleared afterwards -- that is fine for the one thing it is asked, since
+    // the path is the ONLY thing in that renderer that ever sets a dash: no
+    // dashed stroke at all means no path was drawn.
+    setLineDash(d) { st.lineDash = d; },
     beginPath() { rec('beginPath'); }, closePath() {},
     moveTo(x, y) { rec('moveTo', { x, y }); },
     lineTo(x, y) { rec('lineTo', { x, y }); },
@@ -57,7 +64,14 @@ function recordingContext(ops, ctxId) {
     arc(x, y) { rec('arc', { x, y }); },
     ellipse() { rec('ellipse'); },
     drawImage() { rec('drawImage'); },
-    fillText(text, x, y) { rec('fillText', { text, x, y }); }
+    fillText(text, x, y) { rec('fillText', { text, x, y }); },
+    // The report haloes its labels: strokeText behind, fillText over. Recorded
+    // separately so `texts` stays one entry per label rather than two.
+    strokeText(text, x, y) { rec('strokeText', { text, x, y }); },
+    // Enough for the report's label collision pass, which only compares
+    // widths against each other. Proportional to length, so a longer label
+    // really does claim more room.
+    measureText(text) { return { width: String(text || '').length * 6 }; }
   };
 }
 
@@ -185,4 +199,57 @@ function createSidebar() {
   return { App, doc, el: sel => doc.querySelector(sel), cameras: () => App.Store.getCameras() };
 }
 
-module.exports = { REPO, renderFloorPng, createSidebar };
+// --- printable report ---------------------------------------------------
+
+// Renders one scene through the real js/reportExport.js and returns every
+// drawing op. This is the THIRD renderer of the same scene and the one most
+// easily forgotten when something is added to the other two -- cameras were
+// absent from it entirely until someone printed a report and looked.
+function renderReport(setup, scene) {
+  const ops = [];
+  let ctxSeq = 0;
+  const sandbox = {
+    console,
+    devicePixelRatio: 1,
+    document: {
+      createElement: () => {
+        const ctxId = ctxSeq++;
+        return {
+          width: 0, height: 0,
+          getContext: () => recordingContext(ops, ctxId),
+          toDataURL: () => 'data:image/png;base64,stub'
+        };
+      }
+    }
+  };
+  // Fires onload synchronously; a real Image never does here, so without this
+  // the icon branch never runs and only the wedge fallback gets tested.
+  sandbox.Image = class {
+    constructor() { this.naturalWidth = 100; this.naturalHeight = 60; }
+    set src(v) { this._src = v; if (this.onload) this.onload(); }
+    get src() { return this._src; }
+  };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+
+  const App = loadFiles(sandbox, [
+    'js/utils/geometry.js', 'js/studioSketch.js', 'js/reportExport.js'
+  ]);
+  App.reportExport.buildLayoutSnapshot(setup, scene);
+
+  const snapshotOps = ops.filter(o => o.ctxId === 0);
+  return {
+    ops,
+    snapshotOps,
+    texts: snapshotOps.filter(o => o.op === 'fillText').map(o => o.text),
+    // drawImage on the REPORT canvas only. The icon is tinted on a scratch
+    // canvas, whose own drawImage would otherwise be counted as a camera and
+    // put every count one high -- the reason every op carries a ctxId.
+    icons: snapshotOps.filter(o => o.op === 'drawImage'),
+    strokes: snapshotOps.filter(o => o.op === 'stroke'),
+    dashedStrokes: snapshotOps.filter(o => o.op === 'stroke' && o.lineDash && o.lineDash.length),
+    fills: snapshotOps.filter(o => o.op === 'fill')
+  };
+}
+
+module.exports = { REPO, renderFloorPng, renderReport, createSidebar };
