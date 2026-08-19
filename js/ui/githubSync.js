@@ -89,8 +89,47 @@ window.App = window.App || {};
       headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders(cfg)),
       body: JSON.stringify(body)
     });
-    if (!res.ok) throw new Error(`Save of ${path} failed (${res.status}): ${await res.text()}`);
+    if (!res.ok) {
+      const detail = await res.text();
+      // GitHub answers an oversized file with a 422 whose message is about
+      // its own internals ("Sorry, the file is too large to be processed.
+      // Consider creating/updating the file in a local clone"), which says
+      // nothing about the actual cause here -- full-resolution frame grabs
+      // stored inside the setup's JSON. Say what to do instead.
+      if (/too large/i.test(detail)) {
+        throw new Error(`it is too big for GitHub's API — almost certainly full-resolution frame grabs stored inside the setup. Run "python shrink_frame_grabs.py --write" on the machine holding the setups folder, reload this page, and try again`);
+      }
+      throw new Error(`Save of ${path} failed (${res.status}): ${detail}`);
+    }
     return res.json();
+  }
+
+  // A setup this big cannot go up, so there is no point spending the upload
+  // to find out. Returns a reason, or null to proceed.
+  //
+  // The threshold is deliberately well past anything GitHub would have
+  // accepted rather than close to it: a wrong skip here costs a day's work
+  // not backed up, while a needless upload costs seconds -- the same trade
+  // the "push when in doubt" rule below makes. Anything actually near the
+  // real limit is caught by putJsonFile's 422 handling instead.
+  const OVERSIZE_BYTES = 45 * 1024 * 1024;
+
+  function oversizeReason(setup) {
+    const json = JSON.stringify(setup);
+    if (json.length <= OVERSIZE_BYTES) return null;
+    const mb = n => (n / 1048576).toFixed(1);
+    // Naming the grabs' share is what makes this actionable: it is ~99% of
+    // the file every time, and without the number it reads as though the
+    // props and positions were somehow the problem.
+    let grabBytes = 0;
+    (setup.scenes || []).forEach(scene => {
+      if (scene.frameGrab && scene.frameGrab.imageDataUrl) grabBytes += scene.frameGrab.imageDataUrl.length;
+      (scene.cameras || []).forEach(c => {
+        if (c.frameGrab && c.frameGrab.imageDataUrl) grabBytes += c.frameGrab.imageDataUrl.length;
+      });
+    });
+    return `it is ${mb(json.length)} MB, too big for GitHub's API — ${mb(grabBytes)} MB of that is frame grabs. `
+      + 'Run "python shrink_frame_grabs.py --write" on the machine holding the setups folder, reload this page, and try again';
   }
 
   function configReady(cfg) { return !!(cfg.token && cfg.owner && cfg.repo); }
@@ -222,6 +261,11 @@ window.App = window.App || {};
         try {
           const setup = await App.persistence.loadLocal(entry.id);
           if (!setup) throw new Error('it is no longer in the setups folder');
+          // Thrown rather than returned, so an oversized setup lands in the
+          // same failed[] the status line already names -- and, like every
+          // other failure here, doesn't abort the setups queued behind it.
+          const oversize = oversizeReason(setup);
+          if (oversize) throw new Error(oversize);
           await putJsonFile(cfg, `setups/${setup.id}.json`, setup, shaById.get(setup.id),
             `Save "${setup.name}" — ${new Date().toISOString()}`);
           pushed.push({ id: setup.id, name: setup.name, updatedAt: setup.updatedAt, sceneCount: (setup.scenes || []).length });

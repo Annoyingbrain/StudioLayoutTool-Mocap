@@ -213,6 +213,31 @@ theorising about the connection — every connection bug so far failed
   `ensureCamera` so there is always a camera to hand it to); the ancient
   pre-scenes migration in `persistence.js` still parks it on the scene and
   lets that one move it.
+- **A frame grab's file size IS the setup's file size**, so imports are
+  scaled down on the way in (`dom.readImageFileAsDataUrl`, 1920px long edge,
+  JPEG q0.82). The grab is stored as a base64 data URL inside the setup's
+  JSON, which is then carried by every save, every load, every device on the
+  LAN and every GitHub backup — and base64 adds a third on top. Stored as
+  they came off the camera, nine grabs took one setup to **72MB**, at which
+  point GitHub's contents API refuses the backup outright with a 422 whose
+  message ("the file is too large to be processed") names nothing that would
+  lead you here. Nothing looks at more than that 1920px: the grab is a panel
+  thumbnail and a page-width figure in the report. Two follow-ons:
+  - **`shrink_frame_grabs.py` re-encodes the grabs in setups already saved**
+    (dry-run by default, `.json.bak` kept, atomic replace like `server.py`).
+    It needs Pillow, which the app itself does not — `pip install Pillow`
+    for that one run. It has to look for the grab **on the camera, on the
+    scene AND on the setup**: the two older layouts are migrated in memory on
+    load, so a setup saved years ago is still scene-shaped *on disk*, which is
+    exactly the file the script is pointed at. Looking only at cameras had two
+    7MB setups reporting "nothing to do" with their whole 7MB one level up.
+    **Reload the browser after running it**, or saving from a tab still
+    holding the old grabs writes them straight back.
+  - `githubSync.js` refuses a setup over 45MB before spending the upload, and
+    rewrites any "too large" 422 into what to actually do about it. The
+    threshold is deliberately far past what GitHub would accept rather than
+    close to it — a wrong skip costs a day's work not backed up, a needless
+    upload costs seconds — with the 422 handling covering the gap.
 - **A panel hint long enough to bury its own controls folds into a
   `<details>`** (`.hint-details`), as Live Tracking's does — left open it
   pushed the rigid-body list, the part used during a shoot, off the bottom.

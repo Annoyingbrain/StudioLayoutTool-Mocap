@@ -260,7 +260,11 @@ window.App = window.App || {};
         const file = e.target.files[0];
         e.target.value = '';
         if (!file) return;
-        const dataUrl = await dom.readFileAsDataUrl(file);
+        // Scaled down on the way in (dom.FRAME_GRAB_MAX_PX): the grab lives
+        // inside the setup's JSON, so a full-resolution still off the camera
+        // is carried by every save, load, device sync and GitHub backup --
+        // and the backup fails outright once the file gets big enough.
+        const dataUrl = await dom.readImageFileAsDataUrl(file);
         App.Store.setFrameGrab({ imageDataUrl: dataUrl, caption: (App.Store.getFrameGrab() || {}).caption || '' });
       });
       dom.qs('#framegrab-caption').addEventListener('input', e => {
