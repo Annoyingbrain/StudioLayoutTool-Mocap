@@ -563,9 +563,15 @@ window.App = window.App || {};
       if (!camera) return;
       if (App.liveRecording.isRecording()) {
         const result = App.liveRecording.stop();
-        App.toast(result
-          ? `Movement recorded (${result.pointCount} points).`
-          : 'Nothing recorded — the camera never moved.', !result);
+        // Three outcomes, and "it didn't move" is a success rather than a
+        // failure: the camera's tracked position is what goes on the plan.
+        if (!result) {
+          App.toast('Nothing recorded — the camera was never tracked. Check Live Tracking.', true);
+        } else if (result.pointCount === 0) {
+          App.toast('No movement — saved as a static camera position.');
+        } else {
+          App.toast(`Movement recorded (${result.pointCount} points).`);
+        }
       } else {
         const problem = App.liveRecording.start(camera.id);
         if (problem) App.toast(problem, true);

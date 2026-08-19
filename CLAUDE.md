@@ -80,8 +80,9 @@ The app is browser code with no module system, which is exactly what makes
 this work — every file hangs things off `window.App`, so giving a Node `vm`
 context a `window` and running the files in `index.html`'s order builds the
 whole app in-process. `test/helpers/appContext.js` does that, and hands back
-either a recording canvas (for the floor PNG) or a small duck-typed DOM shim
-(for the sidebar), so a handler can be fired and the result asserted.
+either a recording canvas (for the floor PNG and the printed report) or a
+small duck-typed DOM shim (for the sidebar), so a handler can be fired and the
+result asserted.
 
 These exist because browser automation isn't available on the studio machine,
 so "does this actually work" was otherwise unanswerable without asking someone
@@ -99,6 +100,25 @@ Three things in the harness are load-bearing, and all three were bugs first:
 - **`appContext.js`'s file list mirrors `index.html`'s script order.** Adding
   a script there means adding it here, or a module loads before something it
   reads at definition time.
+- **Comparing a drawn position across two renders is invalid unless the
+  bounds held.** The report frames itself on its own content, so adding a
+  camera to a scene rescales the whole view and every existing label moves —
+  for reasons that have nothing to do with what was being tested. A test that
+  compares positions between two scenes has to assert the bounds were
+  unchanged, or it is comparing two different framings. The label-priority
+  test does exactly that, and also asserts its fixture is still a genuine
+  collision, so a geometry change fails it loudly instead of leaving it
+  passing while testing nothing.
+- **A stroke count is not a test that a line was drawn.** The report's wall
+  and camera wedges stroke too, so `strokes.length > 0` passed even with the
+  camera path deleted. The path is the only thing that sets a dash, so the
+  recording context records `setLineDash` and the test asserts on that
+  instead. Counted loosely, because the stub's `restore()` is a no-op and the
+  dash leaks onto strokes drawn after it.
+- **Restore a mutated file from a copy, not `git checkout`.** Mutation-testing
+  a file with uncommitted work in it and reverting with `git checkout` throws
+  that work away — it restores the committed version, not the pre-mutation
+  one.
 
 Worth knowing that the suite is checked against deliberate mutations: putting
 the camera name back into `cameraListStructureKey`, or drawing the static icon
@@ -240,18 +260,66 @@ theorising about the connection — every connection bug so far failed
   setup + position, so it's the same plan redrawn). If the folder is
   unreachable the export falls back to a normal download and the toast says
   so — a missing drive mapping costs the shared folder, never the export.
-- **There are two floor renderers, and they drift apart silently.**
-  `js/canvas.js` draws the screen; `js/floorPngExport.js` redraws the same
-  scene for Disguise. They share no drawing code — different coordinate
+- **There are THREE renderers of the same scene, and they drift apart
+  silently.** `js/canvas.js` draws the screen; `js/floorPngExport.js` redraws
+  it for Disguise; `js/reportExport.js` redraws it again for print. Cameras
+  were absent from the report entirely until someone printed one and looked —
+  the same class of bug as recorded moves once missing from every exported
+  PNG, and it went unnoticed longer because the report is reached for less
+  often. They share no drawing code — different coordinate
   transforms (screen vs Disguise space), different palettes (colour vs white
   on black) — so anything added to one has to be added to the other by hand.
   A recorded camera move was drawn on screen but **silently missing from
   every exported PNG** for exactly this reason: the export had no reference
   to `trail` at all. Nothing errors when this happens; the feature simply
-  isn't in the file. When adding anything the plan should show, do both, and
-  keep the layering identical (props → trail → trail endpoints → cameras).
+  isn't in the file. When adding anything the plan should show, do **all
+  three**, and keep the layering identical (props → trail → trail endpoints →
+  cameras). Each has headless coverage (`test/floorPngExport.test.js`,
+  `test/reportExport.test.js`), and both suites are mutation-checked — drop
+  the path, the caption or the Start marker from either renderer and its
+  tests fail.
   They are **not** required to show the same thing, though — see the next
-  point.
+  point. Where they legitimately differ: the PNG is white-on-black because
+  that is what Disguise reads; the report is each entity's own colour on
+  white. All three draw `camera.png` (each with its own `Image`, since none
+  exposes its own) with the same wedge fallback while it loads — the PNG
+  tints it flat white, the report tints it per camera, and that tint is
+  cached per colour AND size because a report holds several camera positions
+  in different colours at one scale. The report also draws a recorded path
+  **dashed** — on white, beside solid prop outlines in the same palette, a
+  solid stroke reads as another piece of set rather than a move.
+  The report's drawing coordinates stay in a CSS-pixel space of at most
+  1400×900 while `RENDER_SCALE` multiplies only the backing store, so the
+  layout can print at the full page width without a single font size
+  changing; it is capped (`MAX_PIXEL_SCALE`) because the result is embedded
+  as a data URL and a retina `devicePixelRatio` would multiply on top of it.
+- **Recording a camera move keeps only the MOVEMENT.** A camera standing
+  still is not still in the data — the solve jitters, so consecutive frames
+  differ in the last decimal place. The old test ("is this sample different at
+  all?") was therefore true 30 times a second whether or not anything had
+  moved, and a short nudge could spend all 400 of `TRAIL_MAX_POINTS` on a blob
+  at each end with the real move drawn from the leftovers. `liveRecording.js`
+  now samples only past `MOVED_EPSILON_M` (2cm) or `MOVED_EPSILON_DEG` (2°),
+  both far above the noise floor (a settled body holds heading to sd 0.15°)
+  and far below any move worth drawing. Three things about it:
+  - **Measured from the last KEPT sample, not the last frame** — frame-to-frame
+    lets a slow drift through a step at a time and rebuilds the blob.
+  - **Rotation counts**, even though the trail stores only x/y: a camera
+    panned in place has genuinely moved and `trailEndpoints` carries the
+    heading at each end.
+  - **A recording where nothing moved is a RESULT, not a failure.** The
+    camera is somewhere, that position is tracked, and it is what belongs on
+    the plan — so the recording is saved as a static camera position and any
+    previous trail is **cleared**. Recording a parked camera is how you say
+    "it sits here now"; keeping the old path would make that impossible to
+    say, and would leave the plan showing a move the camera is no longer
+    making. Distinct from a recording where tracking never delivered a frame
+    at all, which writes nothing and says so — `outcomeOf` returns
+    `'move' | 'static' | 'none'` for exactly this three-way split, and
+    `applyOutcome` writes it.
+  The thresholds are the whole behaviour, so `test/liveRecording.test.js`
+  pins both ends of the range — too low and the jitter is back, too high and a
+  real push-in is discarded — and is mutation-checked against both.
 - **On the exported PNG, a camera with a recorded move is drawn as the move
   alone**: the path plus a Start and an End icon, with its static icon and
   red centre dot suppressed. Drawing both was misleading rather than merely
@@ -270,6 +338,50 @@ theorising about the connection — every connection bug so far failed
   Sizes in the export are given in *metres* scaled by `(scaleX+scaleY)/2`,
   not pixels — that canvas is ~245 px/m, so an on-screen 2px line comes out
   a hairline there.
+- **The report's page is cropped to its content in BOTH directions**, rather
+  than being a fixed 1400×900. The LED wall arc is far bigger than the area
+  anyone actually dresses, so framing on the whole arc left the top ~40% of
+  the picture as empty white inside the curve. The vertical extent is trimmed
+  to the props and cameras plus a margin and **clamped to the wall** — the
+  trim removes empty floor, it never invents space that isn't there — and the
+  canvas is cropped to whatever the frame actually uses. Two things that are
+  easy to get wrong here:
+  - **The full WIDTH of the wall is always kept in the frame.** It is the
+    studio; cropping it sideways loses props against it. That also caps how
+    much bigger this can make the plan (~1.16×) — if a plan is wanted
+    substantially bigger, cropping the wall is the only thing that does it,
+    and that is a deliberate trade, not an oversight.
+  - **Cropping only the height achieves nothing.** The image prints at the
+    full width of the page, so letterboxing in *either* axis is page width
+    spent on white. Trimming the height alone just moved the empty space to
+    the sides and the plan came out no bigger; both axes have to follow the
+    content.
+- **The report places its labels in a pass of their own, after everything is
+  drawn.** Two camera positions a metre apart put four labels — a name, a lens
+  line, a Start and an End — in the same square inch, and drawn where each
+  naturally falls they overprint into a stack nobody can read. So labels are
+  *collected* while drawing and placed at the end, each nudged straight down a
+  line at a time until it clears the ones already placed; where one can go
+  depends on where the others went, which isn't known until every natural
+  position is. Consequences worth keeping:
+  - **Priority decides who moves**: props first (they anchor the plan), then
+    camera names, then Start/End — an endpoint gives way because its icon
+    already says most of what it says.
+  - **A camera's name and lens line move as one block.** Split, a lens
+    reading ends up under someone else's name, which is worse than an overlap
+    because it looks correct.
+  - The nudge is **capped**. Past a few lines the label is so far from its
+    icon that it stops reading as that camera's label, and an overlap is the
+    lesser problem.
+  - Every label is **haloed** (white `strokeText` under the fill), so one that
+    still lands on a path or an icon reads against it rather than merging in.
+  - Labels drawing last also puts them on top of every icon and path.
+- **The printed report leads with the cameras, then the props.** Lens and
+  height are what a shot gets set up from and neither is readable off the
+  drawing, so the Camera Positions table comes first and the props — the
+  dressing that goes around it — sit under it. A camera that moved has no
+  single position, so its row reports the end of the move and the point count
+  instead.
 - **A camera position can be hidden, and that is a CANVAS-ONLY setting.**
   Several camera positions in one prop layout overlap into an unreadable
   pile, so each row in the Cameras list carries Hide/Show (`camera.hidden`,
