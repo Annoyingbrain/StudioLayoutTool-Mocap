@@ -177,6 +177,19 @@ button.primary, button#btn-compute-position { background: var(--accent-dim); bor
   color: var(--text);
 }
 .chk { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+/* A checkbox is not a field to be stretched. The `label input` rule above
+   makes every input inside a label full-width, which stayed invisible for as
+   long as .chk lived in a shrink-to-fit .tool-row -- the checkbox was 100% of
+   a box that was only as wide as its own text. Stretch one .chk to a menu
+   item's width and the same rule gives you a checkbox the width of the whole
+   More menu, with the label wrapped into a column beside it. margin-top goes
+   too: it comes from the same rule and tips the box off centre. */
+.chk input[type="checkbox"] {
+  display: inline-block;
+  width: auto;
+  margin-top: 0;
+  flex-shrink: 0;
+}
 /* In the header the zoom field sits among real controls, so it takes their
    size rather than the muted panel-caption look .chk gives it in a panel. */
 .toolbar-chk { font-size: 13px; color: var(--text); white-space: nowrap; }
