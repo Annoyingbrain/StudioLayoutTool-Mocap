@@ -252,6 +252,16 @@ theorising about the connection — every connection bug so far failed
   Sizes in the export are given in *metres* scaled by `(scaleX+scaleY)/2`,
   not pixels — that canvas is ~245 px/m, so an on-screen 2px line comes out
   a hairline there.
+- **The header carries four actions and no more**: New, Save, Load setup, and
+  Export Floor PNG (Disguise) — the ones a shoot day actually reaches for.
+  Everything else (Export CSV, Report / Print, Export/Import .json) is behind
+  the *More* menu at the right. On a tablet at the studio the header is the
+  only thing between the crew and the canvas, and eight buttons meant reading
+  it every time instead of hitting the one you wanted. Nothing was removed and
+  no ids changed, so `toolbar.js` binds every handler exactly as before —
+  moving a button between the header and the menu is a markup change alone.
+  The two `.panel-toggle` buttons stay outside the menu deliberately: they
+  only appear below 900px, where they're how you reach the side panels at all.
 - Setups are `.json` files in `--setups-dir`, shared by every device on the
   network. Filenames come from the setup name; identity is the `id` inside.
   **GitHub Sync is a manual backup of that folder**, not the primary store.

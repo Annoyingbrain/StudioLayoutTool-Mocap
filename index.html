@@ -11,22 +11,36 @@
 <div id="app-shell">
 
   <header id="toolbar">
-    <div class="toolbar-group">
+    <div class="toolbar-group toolbar-group-left">
       <button id="btn-toggle-left" class="panel-toggle" aria-label="Toggle layers panel">☰ Layers</button>
       <strong class="brand">Studio Layout Tool — Mocap</strong>
       <input id="setup-name" type="text" value="Untitled Setup" spellcheck="false">
     </div>
-    <div class="toolbar-group">
+
+    <!-- The four things a shoot day actually reaches for, kept in the middle
+         where they can be hit without reading the header. Everything else is
+         behind More — not removed, just not competing with these. Adding a
+         button here means taking the decision that it belongs in that set. -->
+    <div class="toolbar-group toolbar-group-main">
       <button id="btn-new">New</button>
       <button id="btn-save-local">Save</button>
       <select id="setup-picker"><option value="">Load setup…</option></select>
-      <button id="btn-export-json">Export .json</button>
-      <label class="file-btn">Import .json<input id="import-json" type="file" accept="application/json"></label>
-    </div>
-    <div class="toolbar-group">
-      <button id="btn-export-csv">Export CSV (Disguise)</button>
       <button id="btn-export-floor-png">Export Floor PNG (Disguise)</button>
-      <button id="btn-report">Report / Print</button>
+    </div>
+
+    <div class="toolbar-group toolbar-group-right">
+      <div class="toolbar-menu">
+        <button id="btn-more" class="menu-trigger" aria-haspopup="true" aria-expanded="false">More ▾</button>
+        <div id="more-menu" class="menu-panel hidden" role="menu" aria-labelledby="btn-more">
+          <button id="btn-export-csv" role="menuitem">Export CSV (Disguise)</button>
+          <button id="btn-report" role="menuitem">Report / Print</button>
+          <div class="menu-sep"></div>
+          <button id="btn-export-json" role="menuitem">Export .json</button>
+          <label class="file-btn menu-file" role="menuitem">Import .json<input id="import-json" type="file" accept="application/json"></label>
+        </div>
+      </div>
+      <!-- Deliberately NOT in the More menu: the panel toggles only exist on
+           narrow screens, where they're how you reach the panels at all. -->
       <button id="btn-toggle-right" class="panel-toggle" aria-label="Toggle inspector panel">Inspector ⚙</button>
     </div>
   </header>

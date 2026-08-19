@@ -1,9 +1,18 @@
 // Top toolbar: setup name, new/save/load, JSON export/import, CSV export, report,
 // tool selection (select/add-prop), grid + zoom, and the frame-grab panel.
+//
+// Only New / Save / Load / Export Floor PNG sit in the header itself; the
+// rest live behind the More menu. Nothing moved out of the file -- the
+// buttons kept their ids, so every handler below is bound exactly as before
+// whichever side of the menu its button ended up on.
 window.App = window.App || {};
 
 (function () {
   const dom = App.dom;
+
+  // Assigned by initMoreMenu; a no-op until then so nothing depends on init
+  // order to be safe to call.
+  let closeMoreMenu = () => {};
 
   async function refreshSetupPicker() {
     const picker = dom.qs('#setup-picker');
@@ -103,6 +112,39 @@ window.App = window.App || {};
     }
   }
 
+  // The More menu. Opens on click, closes on: a menu item, a click anywhere
+  // outside, or Escape.
+  function initMoreMenu() {
+    const trigger = dom.qs('#btn-more');
+    const menu = dom.qs('#more-menu');
+
+    function setOpen(open) {
+      menu.classList.toggle('hidden', !open);
+      trigger.setAttribute('aria-expanded', String(open));
+    }
+    closeMoreMenu = () => setOpen(false);
+
+    trigger.addEventListener('click', e => {
+      e.stopPropagation(); // or the document listener below closes it again
+      setOpen(menu.classList.contains('hidden'));
+    });
+
+    menu.addEventListener('click', e => {
+      // Import .json is a <label> wrapping a file input: closing here would
+      // pull the menu out from under the file dialog while it's still open.
+      // Its change handler closes it once a file has actually been picked.
+      if (e.target.closest('.file-btn')) return;
+      closeMoreMenu();
+    });
+
+    document.addEventListener('click', e => {
+      if (!menu.contains(e.target)) closeMoreMenu();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeMoreMenu();
+    });
+  }
+
   function initPanelDrawers() {
     const left = dom.qs('#left-panel');
     const right = dom.qs('#right-panel');
@@ -129,6 +171,7 @@ window.App = window.App || {};
   App.toolbar = {
     init() {
       initPanelDrawers();
+      initMoreMenu();
 
       dom.qs('#setup-name').addEventListener('input', e => {
         App.Store.getSetup().name = e.target.value;
@@ -160,6 +203,7 @@ window.App = window.App || {};
       dom.qs('#import-json').addEventListener('change', async e => {
         const file = e.target.files[0];
         e.target.value = '';
+        closeMoreMenu(); // deferred from the click, see initMoreMenu
         if (!file) return;
         try {
           const setup = await App.persistence.importFromFile(file);

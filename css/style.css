@@ -29,7 +29,6 @@ html, body {
 
 #toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 16px;
   padding: 8px 12px;
@@ -39,7 +38,55 @@ html, body {
 }
 
 .toolbar-group { display: flex; align-items: center; gap: 8px; }
+
+/* The side groups share the leftover space equally (flex-basis 0, not auto),
+   which is what actually CENTRES the main group -- space-between only
+   centres it when the two sides happen to be the same width, and they
+   aren't. min-width: 0 lets them give way before the middle does. */
+.toolbar-group-left, .toolbar-group-right { flex: 1 1 0; min-width: 0; }
+.toolbar-group-right { justify-content: flex-end; }
+.toolbar-group-main { flex: 0 0 auto; }
+
 .brand { color: var(--accent); margin-right: 6px; }
+
+/* ---- More menu -------------------------------------------------------
+   position: relative WITHOUT a z-index, deliberately: that positions the
+   panel without creating a stacking context, so the panel's own z-index
+   competes with the drawer overlays (#left-panel is 20) instead of being
+   trapped under them by an ancestor. */
+.toolbar-menu { position: relative; }
+
+.menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+  max-width: calc(100vw - 24px);
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+/* Menu items read as a list, not as a row of buttons: no border, full width,
+   left-aligned text. */
+.menu-panel button, .menu-panel .file-btn {
+  border-color: transparent;
+  background: transparent;
+  text-align: left;
+  width: 100%;
+  white-space: nowrap;
+}
+.menu-panel button:hover, .menu-panel .file-btn:hover {
+  background: var(--panel-alt);
+  border-color: var(--accent);
+}
+.menu-sep { height: 1px; margin: 2px 0; background: var(--border); }
 
 #setup-name {
   background: var(--panel-alt);
@@ -344,4 +391,9 @@ label input[type="color"] { padding: 2px; height: 30px; }
   .toolbar-group { flex-wrap: wrap; }
   .toolbar-group:first-child { order: 1; }
   #setup-name { min-width: 0; width: 100%; }
+  /* The equal-share centring above is meaningless once the groups are
+     stacked rows, and flex: 1 on a column child stretches them vertically
+     instead -- so hand it back. */
+  .toolbar-group-left, .toolbar-group-right { flex: 0 0 auto; }
+  .toolbar-group-right { justify-content: flex-start; }
 }
