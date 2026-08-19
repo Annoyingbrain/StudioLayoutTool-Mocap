@@ -49,7 +49,21 @@ App.factories = {
       // Position + rotation at the trail's start/end (each { x, y,
       // rotationDeg }), for drawing oriented camera icons at both ends.
       // null until a move is recorded.
-      trailEndpoints: null
+      trailEndpoints: null,
+      // The reference frame grab for THIS camera position ({ imageDataUrl,
+      // caption } or null). Per camera, not per position: one prop layout is
+      // shot from several positions and the grab is what each of those
+      // positions is meant to look like, so a single one per layout could
+      // only ever describe one of them.
+      frameGrab: null,
+      // ON-SCREEN visibility only. Several camera positions in one prop
+      // layout overlap into an unreadable pile, so they can be hidden while
+      // working on one of them. EXPORTS DELIBERATELY IGNORE THIS -- the
+      // floor PNG, the Disguise CSV and the report all carry every camera,
+      // because this is a decluttering aid, not a way to leave a camera out
+      // of the plan the crew shoots from. Absent (old setups, hand-edited
+      // JSON) reads as visible, so nothing needs migrating.
+      hidden: false
     };
   },
 
@@ -79,7 +93,6 @@ App.factories = {
       props: [],
       cameras: [App.factories.newCamera(
         App.factories.DEFAULT_CAMERA_POS.x, App.factories.DEFAULT_CAMERA_POS.y, 0)],
-      frameGrab: null,    // { imageDataUrl, caption }
       view: { scale: 40, originX: 400, originY: 400 }
     };
   },
@@ -124,11 +137,26 @@ App.Store = (function () {
     return loaded;
   }
 
+  // Frame grabs used to hang off the scene, one per position. They now hang
+  // off a camera, because a position can hold several camera positions and
+  // one picture can only be of one of them. Anything saved before that
+  // arrives with scene.frameGrab set: hand it to the scene's first camera
+  // rather than dropping it. Runs after ensureCamera, so there is always one
+  // to hand it to.
+  function migrateFrameGrab(loaded) {
+    (loaded.scenes || []).forEach(scene => {
+      if (!scene.frameGrab) return;
+      if (scene.cameras[0] && !scene.cameras[0].frameGrab) scene.cameras[0].frameGrab = scene.frameGrab;
+      delete scene.frameGrab;
+    });
+    return loaded;
+  }
+
   return {
     subscribe(fn) { listeners.push(fn); return () => listeners.splice(listeners.indexOf(fn), 1); },
 
     getSetup() { return setup; },
-    setSetup(newSetup) { setup = ensureCamera(newSetup); selectedPropId = null; selectedCameraId = null; emit(); },
+    setSetup(newSetup) { setup = migrateFrameGrab(ensureCamera(newSetup)); selectedPropId = null; selectedCameraId = null; emit(); },
     touch() { setup.updatedAt = new Date().toISOString(); emit(); },
 
     getScene() { return currentScene(); },
@@ -158,7 +186,11 @@ App.Store = (function () {
       scene.cameras = from.cameras.map(c => Object.assign({}, c, {
         // A recorded move belongs to the position it was recorded in.
         trail: null,
-        trailEndpoints: null
+        trailEndpoints: null,
+        // So does a frame grab: it's a picture of a shot, and a new position
+        // is a new prop layout, so the old one would be describing something
+        // that is no longer in front of the camera.
+        frameGrab: null
       }));
       setup.scenes.push(scene);
       setup.activeSceneId = scene.id;
@@ -224,6 +256,23 @@ App.Store = (function () {
     },
 
     getCameras() { return currentScene().cameras; },
+
+    // What js/canvas.js draws and hit-tests. Everything else -- the camera
+    // list, the inspector, the exports -- goes through getCameras() and sees
+    // hidden ones too, which is what keeps a hidden camera editable and
+    // findable rather than gone.
+    getVisibleCameras() { return currentScene().cameras.filter(c => !c.hidden); },
+    getHiddenCameraCount() { return currentScene().cameras.filter(c => c.hidden).length; },
+    toggleCameraHidden(id) {
+      const c = currentScene().cameras.find(c => c.id === id);
+      if (!c) return;
+      c.hidden = !c.hidden;
+      this.touch();
+    },
+    showAllCameras() {
+      currentScene().cameras.forEach(c => { c.hidden = false; });
+      this.touch();
+    },
     addCamera(camera) { currentScene().cameras.push(camera); selectedCameraId = camera.id; selectedPropId = null; this.touch(); },
     removeCamera(id) {
       const scene = currentScene();
@@ -241,7 +290,19 @@ App.Store = (function () {
       this.touch();
     },
 
-    setFrameGrab(fg) { currentScene().frameGrab = fg; this.touch(); },
+    // Both go through getInspectedCamera(), the same camera the Inspector
+    // edits: with one camera there is nothing to pick, with several there is,
+    // and null means "nothing is picked" rather than "no frame grab".
+    getFrameGrab() {
+      const camera = this.getInspectedCamera();
+      return camera ? camera.frameGrab : null;
+    },
+    setFrameGrab(fg) {
+      const camera = this.getInspectedCamera();
+      if (!camera) return;
+      camera.frameGrab = fg;
+      this.touch();
+    },
     setView(patch) { Object.assign(currentScene().view, patch); emit(); }
   };
 })();

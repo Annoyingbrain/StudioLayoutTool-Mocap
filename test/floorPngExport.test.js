@@ -143,3 +143,24 @@ test("the icon's source-in recolour stays off the export canvas", () => {
   assert.equal(r.ops[0].ctxId, 0, 'on the export canvas');
   assert.ok(r.ops.some(o => o.op === 'drawImage' && o.ctxId !== 0), 'recolour happened elsewhere');
 });
+
+// The on-screen canvas hides these; this file must not. The whole reason
+// hiding is safe to offer is that the exported plan is unaffected -- if that
+// stops being true, hiding silently drops a camera from what the crew shoots
+// from, and nothing about the PNG says a camera is missing.
+test('a camera hidden on the canvas is still drawn on the export', () => {
+  const r = renderFloorPng(SETUP, scene([Object.assign({}, still, { hidden: true })]));
+  assert.equal(r.icons.length, 1, 'hiding is a canvas-only setting');
+  assert.equal(r.redDots.length, 1);
+  assert.ok(r.texts.includes('Cam B'), 'still captioned');
+});
+
+test('hiding every camera still exports every camera', () => {
+  const r = renderFloorPng(SETUP, scene([
+    Object.assign({}, still, { hidden: true }),
+    recorded({ hidden: true })
+  ]));
+  assert.ok(r.texts.includes('Cam B'), 'the still camera survived');
+  assert.ok(r.texts.includes('Cam A'), 'the recorded one did too');
+  assert.ok(r.strokes.length > 0, 'and its path is drawn');
+});

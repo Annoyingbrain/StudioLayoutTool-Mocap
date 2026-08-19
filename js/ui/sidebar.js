@@ -102,14 +102,21 @@ window.App = window.App || {};
       });
       propSrcElById[p.id] = srcEl;
 
+      // Two lines: colour + name on top, controls underneath -- see the
+      // .prop-row rules. On one line a prop's name was competing for width
+      // with a badge and one button per tracker, so it ellipsised away to
+      // nothing on the tablet's narrow drawer exactly when the list needed
+      // to be readable one-handed.
       const row = dom.el('div', {
         class: 'prop-row' + (p.id === selectedId ? ' selected' : ''),
         onclick: () => App.Store.selectProp(p.id)
       }, [
-        dom.el('span', { class: 'swatch', style: `background:${p.color}` }),
-        dom.el('span', { class: 'prop-row-name', text: p.name }),
-        srcEl
-      ].concat(renderTrackerLinkButtons(p)));
+        dom.el('div', { class: 'prop-row-main' }, [
+          dom.el('span', { class: 'swatch', style: `background:${p.color}` }),
+          dom.el('span', { class: 'prop-row-name', text: p.name })
+        ]),
+        dom.el('div', { class: 'prop-row-actions' }, [srcEl].concat(renderTrackerLinkButtons(p)))
+      ]);
       list.appendChild(row);
     });
   }
@@ -270,6 +277,27 @@ window.App = window.App || {};
     });
   }
 
+  // Show/Hide for one camera position on the CANVAS ONLY. Several positions
+  // in one prop layout overlap into a pile, and the one you're placing is the
+  // one you need to see. Nothing leaves the setup: the row stays here, the
+  // inspector still edits it, and every export draws it -- so this can't
+  // quietly drop a camera from the plan the crew shoots from.
+  function renderCameraEyeButton(camera) {
+    return dom.el('button', {
+      class: 'prop-row-eye',
+      text: camera.hidden ? 'Show' : 'Hide',
+      title: camera.hidden
+        ? `"${camera.name}" is hidden on the canvas — click to show it again (exports have it either way)`
+        : `Hide "${camera.name}" on the canvas to get it out of the way — exports still include it`,
+      onclick: e => {
+        // As on the link buttons: without this the row's own handler fires
+        // too and changes what the inspector is pointed at.
+        e.stopPropagation();
+        App.Store.toggleCameraHidden(camera.id);
+      }
+    });
+  }
+
   // Same reason as propListStructureKey: this list now carries a button, and
   // rebuilding it on every ~30Hz emit would leave that button unclickable
   // exactly while tracking is live. The measured/manual badge is the only
@@ -284,7 +312,7 @@ window.App = window.App || {};
   function cameraListStructureKey() {
     const scene = App.Store.getScene();
     return [
-      scene.cameras.map(c => `${c.id}:${c.color}`).join('|'),
+      scene.cameras.map(c => `${c.id}:${c.color}:${c.hidden ? 'h' : 'v'}`).join('|'),
       App.Store.getSelectedCameraId(),
       App.motiveCalibration.cameraTrackerName,
       JSON.stringify(App.liveTracking.getAssignments())
@@ -351,17 +379,35 @@ window.App = window.App || {};
       });
       cameraNameElById[c.id] = nameEl;
 
+      // Two lines, same as a prop row: colour + name on top, controls
+      // underneath. The name field is deliberately borderless so the list
+      // reads as labels rather than a wall of form fields -- which stops
+      // working the moment it is squeezed between a badge and two buttons,
+      // and a camera position's name is the thing you actually read.
       const row = dom.el('div', {
-        class: 'prop-row' + (c.id === selectedId ? ' selected' : ''),
+        class: 'prop-row' + (c.id === selectedId ? ' selected' : '') + (c.hidden ? ' row-hidden' : ''),
         onclick: () => App.Store.selectCamera(c.id)
       }, [
-        dom.el('span', { class: 'swatch', style: `background:${c.color}` }),
-        nameEl,
-        srcEl,
-        renderCameraLinkButton(c)
+        dom.el('div', { class: 'prop-row-main' }, [
+          dom.el('span', { class: 'swatch', style: `background:${c.color}` }),
+          nameEl
+        ]),
+        dom.el('div', { class: 'prop-row-actions' }, [
+          srcEl,
+          renderCameraEyeButton(c),
+          renderCameraLinkButton(c)
+        ])
       ]);
       list.appendChild(row);
     });
+
+    // Only offered when it would do something. It exists because hiding is
+    // per camera: hide four of five, switch position, come back, and "why is
+    // there one camera" needs an answer that isn't clicking five rows.
+    const hiddenCount = App.Store.getHiddenCameraCount();
+    const showAll = dom.qs('#btn-show-all-cameras');
+    showAll.classList.toggle('hidden', hiddenCount === 0);
+    showAll.textContent = `Show All Cameras (${hiddenCount} hidden)`;
   }
 
   // Hidden for the single-camera case: a picker offering one choice is just
@@ -491,12 +537,20 @@ window.App = window.App || {};
 
       App.Store.addCamera(camera); // also selects it
 
+      // This button is in the header, but the row it creates is in here --
+      // which on a tablet is a shut drawer. Open it, or the press reads as
+      // having done nothing. Guarded because the sidebar is built without
+      // the toolbar in the headless tests.
+      if (App.toolbar && App.toolbar.revealLeftPanel) App.toolbar.revealLeftPanel();
+
       // addCamera -> touch -> emit has already rebuilt the list, so the new
       // row's field exists: put the caret in it so the shot name can be
       // typed straight away rather than hunted for.
       const nameEl = cameraNameElById[camera.id];
       if (nameEl) { nameEl.focus(); nameEl.select(); }
     });
+
+    dom.qs('#btn-show-all-cameras').addEventListener('click', () => App.Store.showAllCameras());
 
     dom.qs('#btn-delete-camera').addEventListener('click', () => {
       const camera = App.Store.getInspectedCamera();

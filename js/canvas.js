@@ -362,15 +362,21 @@ window.App = window.App || {};
 
     if (App.dom.qs('#chk-grid').checked) drawGrid(view, w, h);
     if (App.dom.qs('#chk-studio-sketch').checked) drawStudioSketch(view);
+    // Only the cameras not hidden in the camera list: several camera
+    // positions in one prop layout pile up on top of each other, and this is
+    // the screen, where you need to see the one you're placing. The EXPORTS
+    // draw every camera regardless -- see js/floorPngExport.js.
+    const cameras = App.Store.getVisibleCameras();
+
     scene.props.forEach(p => drawProp(view, p, p.id === selectedId));
-    scene.cameras.forEach(c => { if (c.trail) drawCameraTrail(view, c); });
-    scene.cameras.forEach(c => {
+    cameras.forEach(c => { if (c.trail) drawCameraTrail(view, c); });
+    cameras.forEach(c => {
       if (c.trailEndpoints) {
         drawCameraTrailEndpoint(view, c.trailEndpoints.start, c.color, 'Start');
         drawCameraTrailEndpoint(view, c.trailEndpoints.end, c.color, 'End');
       }
     });
-    scene.cameras.forEach(c => drawCamera(view, c, c.id === selectedCameraId));
+    cameras.forEach(c => drawCamera(view, c, c.id === selectedCameraId));
 
     // Each scene has its own pan/zoom; keep the px/m readout in sync when
     // switching scenes (not just when zooming the current one).
@@ -380,12 +386,19 @@ window.App = window.App || {};
     updateHint();
   }
 
+  // The selected camera only if it's actually on screen: promising "drag to
+  // move" for one that's hidden describes something you can't do.
+  function selectedCameraOnCanvas() {
+    const c = App.Store.getSelectedCamera();
+    return c && !c.hidden ? c : null;
+  }
+
   function updateHint() {
     const hint = App.dom.qs('#canvas-hint');
     const tool = App.Store.getTool();
     if (tool === 'add-prop') {
       hint.textContent = 'Click on the canvas to place the prop.';
-    } else if (App.Store.getSelectedCamera()) {
+    } else if (selectedCameraOnCanvas()) {
       hint.textContent = 'Drag to move · top handle rotates · wheel to zoom · middle-drag or space+drag to pan';
     } else {
       const selected = App.Store.getSelectedProp();
@@ -402,10 +415,14 @@ window.App = window.App || {};
     return null;
   }
 
+  // Hit testing walks the VISIBLE cameras only, so it agrees with what was
+  // actually drawn. A hidden camera left in here would be an invisible thing
+  // to catch a click and steal the selection.
   function hitTestCamera(scene, worldPt) {
-    for (let i = scene.cameras.length - 1; i >= 0; i--) {
-      const pts = geo.cameraShapeWorldPoints(scene.cameras[i]);
-      if (geo.pointInTriangle(worldPt, pts[0], pts[1], pts[2])) return scene.cameras[i];
+    const cameras = App.Store.getVisibleCameras();
+    for (let i = cameras.length - 1; i >= 0; i--) {
+      const pts = geo.cameraShapeWorldPoints(cameras[i]);
+      if (geo.pointInTriangle(worldPt, pts[0], pts[1], pts[2])) return cameras[i];
     }
     return null;
   }
@@ -486,8 +503,11 @@ window.App = window.App || {};
         return;
       }
     }
+    // A hidden camera can still be SELECTED (its list row and the inspector
+    // keep working, which is how you edit one you've hidden) -- it just has
+    // no rotation handle on the canvas to grab, because it isn't drawn.
     const selectedCamera = App.Store.getSelectedCamera();
-    if (selectedCamera) {
+    if (selectedCamera && !selectedCamera.hidden) {
       const handle = hitTestCameraHandle(scene.view, selectedCamera, screen, evt.pointerType);
       if (handle && handle.kind === 'rotate') {
         dragState = { kind: 'rotate', entity: 'camera', entityId: selectedCamera.id, center: { x: selectedCamera.x, y: selectedCamera.y } };

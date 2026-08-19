@@ -14,6 +14,11 @@ window.App = window.App || {};
   // order to be safe to call.
   let closeMoreMenu = () => {};
 
+  // Same, from initPanelDrawers. Opens the left drawer if it's shut. Above
+  // 900px there is no drawer and the .open class means nothing, so this is a
+  // no-op there rather than something to branch on.
+  let revealLeftPanel = () => {};
+
   async function refreshSetupPicker() {
     const picker = dom.qs('#setup-picker');
     const current = picker.value;
@@ -63,10 +68,20 @@ window.App = window.App || {};
     dom.qsa('.tool-btn[data-tool]').forEach(btn => btn.classList.toggle('active', btn.dataset.tool === tool));
   }
 
+  // The panel now edits ONE CAMERA's frame grab, so it has to say which --
+  // and has nothing to edit at all when a scene holds several cameras and
+  // none is picked. Left as a bare importer it would silently write the grab
+  // to whichever camera happened to be inspected.
   function syncFrameGrab() {
-    const fg = App.Store.getScene().frameGrab;
+    const camera = App.Store.getInspectedCamera();
+    const fg = App.Store.getFrameGrab();
     const thumb = dom.qs('#framegrab-thumb');
     const caption = dom.qs('#framegrab-caption');
+
+    dom.qs('#framegrab-for').textContent = camera ? `For: ${camera.name}` : '';
+    dom.qs('#framegrab-empty').classList.toggle('hidden', !!camera);
+    dom.qs('#framegrab-fields').classList.toggle('hidden', !camera);
+
     if (fg) {
       thumb.src = fg.imageDataUrl;
       thumb.classList.remove('hidden');
@@ -130,11 +145,12 @@ window.App = window.App || {};
     });
 
     menu.addEventListener('click', e => {
-      // Import .json is a <label> wrapping a file input: closing here would
-      // pull the menu out from under the file dialog while it's still open.
-      // Its change handler closes it once a file has actually been picked.
-      if (e.target.closest('.file-btn')) return;
-      closeMoreMenu();
+      // Only the ACTIONS dismiss the menu. The view toggles live in here as
+      // checkboxes and get flicked on and off to compare, so closing on each
+      // one would make that a chore; and Import .json is a <label> over a
+      // file input, where closing would pull the menu out from under the
+      // file dialog (its change handler closes it once a file is picked).
+      if (e.target.closest('button')) closeMoreMenu();
     });
 
     document.addEventListener('click', e => {
@@ -160,6 +176,8 @@ window.App = window.App || {};
       closeAll();
       if (willOpen) { panel.classList.add('open'); backdrop.classList.add('open'); }
     }
+
+    revealLeftPanel = () => { left.classList.add('open'); backdrop.classList.add('open'); };
 
     dom.qs('#btn-toggle-left').addEventListener('click', () => toggle(left));
     dom.qs('#btn-toggle-right').addEventListener('click', () => toggle(right));
@@ -243,12 +261,12 @@ window.App = window.App || {};
         e.target.value = '';
         if (!file) return;
         const dataUrl = await dom.readFileAsDataUrl(file);
-        App.Store.setFrameGrab({ imageDataUrl: dataUrl, caption: (App.Store.getScene().frameGrab || {}).caption || '' });
+        App.Store.setFrameGrab({ imageDataUrl: dataUrl, caption: (App.Store.getFrameGrab() || {}).caption || '' });
       });
       dom.qs('#framegrab-caption').addEventListener('input', e => {
-        const scene = App.Store.getScene();
-        if (!scene.frameGrab) return;
-        scene.frameGrab.caption = e.target.value;
+        const fg = App.Store.getFrameGrab();
+        if (!fg) return;
+        fg.caption = e.target.value;
         App.Store.touch();
       });
 
@@ -256,6 +274,12 @@ window.App = window.App || {};
       syncSetupName(); syncScenePanel(); syncTools(); syncFrameGrab();
       refreshSetupPicker();
     },
-    refreshSetupPicker
+    refreshSetupPicker,
+    // For the header's + Add Camera Position: the row it creates, and the
+    // name field it focuses, are both in the left panel. Pressed from the
+    // header on a tablet that panel is a shut drawer, so without this the
+    // press looks like it did nothing and the shot name gets typed into a
+    // field nobody can see.
+    revealLeftPanel() { revealLeftPanel(); }
   };
 })();

@@ -139,7 +139,19 @@ function makeEl(tag, doc) {
     fire(ev, arg) {
       (el.handlers[ev] || []).forEach(fn => fn(arg || { target: el, stopPropagation() {} }));
     },
-    child(className) { return el.children.find(c => c.className === className); }
+    // Stands in for querySelector('.x'), so it behaves like one on both
+    // counts a real DOM would: it matches a class TOKEN rather than the whole
+    // className string (rows carry state classes -- 'selected', 'active' --
+    // beside the identifying one), and it searches DESCENDANTS, not just
+    // direct children (a camera row wraps its controls in sub-rows).
+    child(className) {
+      for (const c of el.children) {
+        if (String(c.className).split(/\s+/).includes(className)) return c;
+        const found = c.child && c.child(className);
+        if (found) return found;
+      }
+      return undefined;
+    }
   };
   return el;
 }

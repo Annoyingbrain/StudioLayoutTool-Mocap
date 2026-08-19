@@ -135,9 +135,15 @@ App.reportExport = (function () {
 
       const images = [];
       images.push(`<figure class="report-img-layout"><img src="${snapshot}"><figcaption>Top-down layout &mdash; wall, props</figcaption></figure>`);
-      if (scene.frameGrab) {
-        images.push(`<figure class="report-img-framegrab"><img src="${scene.frameGrab.imageDataUrl}"><figcaption>${scene.frameGrab.caption || 'Frame grab reference'}</figcaption></figure>`);
-      }
+      // One per CAMERA POSITION now, not one per position -- a layout shot
+      // wide and then tight is two different reference pictures, and the
+      // caption has to say which camera each belongs to or a report with
+      // several is unreadable.
+      scene.cameras.forEach(c => {
+        if (!c.frameGrab) return;
+        const caption = c.frameGrab.caption ? `${c.name} &mdash; ${c.frameGrab.caption}` : `${c.name} &mdash; frame grab reference`;
+        images.push(`<figure class="report-img-framegrab"><img src="${c.frameGrab.imageDataUrl}"><figcaption>${caption}</figcaption></figure>`);
+      });
 
       view.innerHTML = `
         <div class="report-page">

@@ -11,6 +11,8 @@ function migrateSetup(setup) {
   if (!(Array.isArray(setup.scenes) && setup.scenes.length)) {
     const scene = App.factories.newScene('Position 1');
     scene.props = setup.props || [];
+    // Still parked on the scene here; App.Store's migrateFrameGrab moves it
+    // onto that scene's first camera, where frame grabs now live.
     scene.frameGrab = setup.frameGrab || null;
     scene.view = setup.view || scene.view;
     scene.createdAt = setup.createdAt || scene.createdAt;

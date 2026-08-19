@@ -49,6 +49,10 @@ html, body {
 
 .brand { color: var(--accent); margin-right: 6px; }
 
+/* Splits the header's two groups of actions -- make/add, then open/save/export
+   -- without spending a second row on it. */
+.toolbar-sep { width: 1px; align-self: stretch; margin: 2px 4px; background: var(--border); }
+
 /* ---- More menu -------------------------------------------------------
    position: relative WITHOUT a z-index, deliberately: that positions the
    panel without creating a stacking context, so the panel's own z-index
@@ -82,9 +86,21 @@ html, body {
   width: 100%;
   white-space: nowrap;
 }
-.menu-panel button:hover, .menu-panel .file-btn:hover {
+.menu-panel button:hover, .menu-panel .file-btn:hover, .menu-panel .chk:hover {
   background: var(--panel-alt);
   border-color: var(--accent);
+}
+/* The view toggles sit in the menu as items, not as the small muted controls
+   they were in the panel: here they're on their own line with everything
+   else, so they read at the same weight as the buttons under them. */
+.menu-panel .chk {
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
 }
 .menu-sep { height: 1px; margin: 2px 0; background: var(--border); }
 
@@ -150,17 +166,24 @@ button.primary, button#btn-compute-position { background: var(--accent-dim); bor
 }
 
 .tool-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; align-items: center; }
-.tool-btn.active { border-color: var(--accent); color: var(--accent); }
-/* Add Prop is the only tool button left and the panel's one real action, so
-   it gets the full width and a bigger hit area -- it's also pressed with a
-   tracker in the other hand, where a 13px target is fiddly. */
-.tool-btn-primary {
-  display: block; width: 100%;
-  padding: 10px 12px; font-size: 15px; font-weight: 600;
-  margin-bottom: 6px;
+/* Add Prop ARMS a tool rather than doing something once, so "armed" has to be
+   unmistakable -- click the canvas while it's on and you place a prop. Filled,
+   not just outlined: in a header row of outlined buttons an outline-only
+   change is easy to miss. Text stays --text; accent on accent-dim is a
+   low-contrast pairing. */
+.tool-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--text);
 }
-.tool-btn-primary.active { background: var(--accent-dim); }
 .chk { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+/* In the header the zoom field sits among real controls, so it takes their
+   size rather than the muted panel-caption look .chk gives it in a panel. */
+.toolbar-chk { font-size: 13px; color: var(--text); white-space: nowrap; }
+.toolbar-chk input[type="number"] {
+  background: var(--panel-alt); border: 1px solid var(--border); color: var(--text);
+  padding: 4px 6px; border-radius: 4px; width: 58px;
+}
 .chk input[type="number"] { width: 50px; }
 
 #canvas-wrap {
@@ -204,6 +227,17 @@ label input[type="color"] { padding: 2px; height: 30px; }
 .small { font-size: 12px; }
 .size-readout { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
 .hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+
+/* A hint long enough to bury the controls under it. Folded away by default;
+   the summary is the disclosure arrow's own row, so it reads as something
+   you can open rather than as a heading. */
+.hint-details > summary {
+  font-size: 11px; color: var(--muted); cursor: pointer;
+  padding: 4px 0; list-style-position: inside;
+}
+.hint-details > summary:hover { color: var(--text); }
+.hint-details[open] > summary { color: var(--text); }
+.hint-details .hint { margin-top: 2px; }
 .hidden { display: none !important; }
 
 /* Taller than it needs to be for reading, because the rows are WORKED on --
@@ -211,15 +245,27 @@ label input[type="color"] { padding: 2px; height: 30px; }
    the targets matter more than fitting more rows on screen. Raised the
    list's max-height to match, or fewer props would be visible at once. */
 #prop-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+/* A row is TWO LINES: colour + name, then that entity's controls underneath.
+   One line meant the name -- the only part you actually read to find the row
+   you want -- competed for width with a badge and one button per tracker,
+   and lost: it ellipsised to nothing in the 320px drawer on the tablet,
+   which is where the list is used one-handed. */
 .prop-row {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px;
   padding: 7px 8px; border-radius: 4px; border: 1px solid transparent;
   cursor: pointer; font-size: 13px;
 }
+.prop-row-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* The buttons share the width evenly; the measured/manual badge keeps its
+   own size, because it is read rather than pressed. */
+.prop-row-actions { display: flex; align-items: center; gap: 6px; }
+.prop-row-actions .prop-row-src { flex-shrink: 0; }
+.prop-row-actions .prop-row-eye,
+.prop-row-actions .prop-row-link { flex: 1; text-align: center; }
 .prop-row:hover { border-color: var(--border); }
 .prop-row.selected { border-color: var(--accent); background: rgba(77,166,255,0.08); }
 .prop-row .swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
-.prop-row .prop-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prop-row .prop-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A camera's name, editable in the row itself (js/ui/sidebar.js). Styled to
    read as the row's label rather than a form field -- borderless until
    hovered or focused -- so a list of camera positions doesn't become a wall
@@ -245,6 +291,21 @@ label input[type="color"] { padding: 2px; height: 30px; }
 }
 .prop-row .prop-row-link:hover { border-color: var(--accent); color: var(--text); }
 .prop-row .prop-row-link.active { border-color: var(--accent); color: var(--accent); background: rgba(77,166,255,0.12); }
+
+/* Canvas visibility toggle. Same shape as the link button beside it. */
+.prop-row .prop-row-eye {
+  font-size: 13px; padding: 5px 8px; border-radius: 4px;
+  background: none; border: 1px solid var(--border); color: var(--muted);
+  flex-shrink: 0;
+}
+.prop-row .prop-row-eye:hover { border-color: var(--accent); color: var(--text); }
+
+/* A hidden camera's row is dimmed so the state reads at a glance, without
+   having to check each row's button. Not display:none -- the whole point is
+   that it stays here to be found, renamed and shown again. The button itself
+   is exempt, or the way back out would be the faintest thing on the row. */
+.prop-row.row-hidden { opacity: 0.5; }
+.prop-row.row-hidden .prop-row-eye { opacity: 1; color: var(--accent); border-color: var(--accent); }
 
 .thumb { max-width: 100%; border-radius: 4px; margin: 6px 0; border: 1px solid var(--border); }
 
@@ -325,15 +386,13 @@ label input[type="color"] { padding: 2px; height: 30px; }
     font-size: 16px; /* prevents iOS Safari auto-zoom-on-focus */
   }
   .chk input[type="checkbox"] { width: 20px; height: 20px; }
-  /* Restated here because the shared rule above is later in the file and
-     would otherwise shrink this one back down on touch -- where it wants to
-     be the BIGGEST target, not the same as everything else. */
-  .tool-btn-primary { min-height: 48px; padding: 12px; }
   .prop-row { padding: 10px 8px; }
-  /* Exempt from the blanket min-height: 40px above -- these sit INSIDE a row
-     that is itself a tap target, so 40px each would make every row ~56px
-     tall and push the list off screen. 32px still clears the ~9mm guideline. */
-  .prop-row .prop-row-link { min-height: 32px; padding: 6px 12px; }
+  /* Exempt from the blanket min-height: 40px above. These now sit on the
+     row's own second line rather than beside the name, so they are no longer
+     stealing width from it -- but the row is two lines tall either way, and
+     40px here would put it near 80px and leave three rows visible in the
+     drawer. 32px still clears the ~9mm guideline. */
+  .prop-row .prop-row-link, .prop-row .prop-row-eye { min-height: 32px; padding: 6px 12px; }
   /* Not caught by the `label input` rule above (this one isn't in a label),
      but it still needs 16px: below that, iOS Safari zooms the whole page in
      on focus, and getting back out mid-shoot is a fight. */

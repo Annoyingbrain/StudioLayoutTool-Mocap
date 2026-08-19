@@ -180,6 +180,24 @@ theorising about the connection — every connection bug so far failed
 
 ## Conventions
 
+- **A frame grab belongs to a CAMERA POSITION, not to a position.** One prop
+  layout shot wide and then tight is two different reference pictures, so a
+  single grab per position could only ever describe one of them. It lives at
+  `camera.frameGrab`; the panel writes to `Store.getInspectedCamera()` and
+  names that camera, because with several cameras and none picked there is
+  nothing to write to and importing would otherwise land on whichever camera
+  happened to be selected. It does **not** carry over to a new position, for
+  the same reason `trail` doesn't — the picture is of a layout that is no
+  longer in front of the camera. Setups saved when it hung off the scene are
+  migrated on load (`Store`'s `migrateFrameGrab`, which runs after
+  `ensureCamera` so there is always a camera to hand it to); the ancient
+  pre-scenes migration in `persistence.js` still parks it on the scene and
+  lets that one move it.
+- **A panel hint long enough to bury its own controls folds into a
+  `<details>`** (`.hint-details`), as Live Tracking's does — left open it
+  pushed the rigid-body list, the part used during a shoot, off the bottom.
+  Native `<details>`, not JS: the arrow, the toggle and the keyboard
+  behaviour come free and it degrades to plain visible text.
 - Positions (scenes) are shots within a setup. **The camera carries over when
   a new position is added; props don't** — a camera is studio hardware present
   for every shot, props are dressed per shot. Copies keep the same camera id
@@ -252,16 +270,50 @@ theorising about the connection — every connection bug so far failed
   Sizes in the export are given in *metres* scaled by `(scaleX+scaleY)/2`,
   not pixels — that canvas is ~245 px/m, so an on-screen 2px line comes out
   a hairline there.
-- **The header carries four actions and no more**: New, Save, Load setup, and
-  Export Floor PNG (Disguise) — the ones a shoot day actually reaches for.
-  Everything else (Export CSV, Report / Print, Export/Import .json) is behind
-  the *More* menu at the right. On a tablet at the studio the header is the
-  only thing between the crew and the canvas, and eight buttons meant reading
-  it every time instead of hitting the one you wanted. Nothing was removed and
-  no ids changed, so `toolbar.js` binds every handler exactly as before —
-  moving a button between the header and the menu is a markup change alone.
-  The two `.panel-toggle` buttons stay outside the menu deliberately: they
-  only appear below 900px, where they're how you reach the side panels at all.
+- **A camera position can be hidden, and that is a CANVAS-ONLY setting.**
+  Several camera positions in one prop layout overlap into an unreadable
+  pile, so each row in the Cameras list carries Hide/Show (`camera.hidden`,
+  persisted with the setup; absent reads as visible, so nothing needed
+  migrating). `js/canvas.js` draws and hit-tests `Store.getVisibleCameras()`;
+  **every export — floor PNG, Disguise CSV, report — goes through
+  `getCameras()` and draws all of them.** That asymmetry is the whole reason
+  hiding is safe to offer: it declutters the screen without ever dropping a
+  camera from the plan the crew shoots from, and an exported PNG gives no
+  hint that a camera was omitted. `test/floorPngExport.test.js` pins it, and
+  the test is mutation-checked — making the export respect `hidden` fails it.
+  A hidden camera keeps its row, stays editable in the Inspector and stays
+  assignable to a tracker; it just isn't drawn and can't be grabbed on the
+  canvas (hit-testing walks the same visible list, or it would be an
+  invisible thing catching clicks). *Show All Cameras* appears under the list
+  only while something is hidden. **Hiding is stored in the shared setup
+  file**, so it follows the setup onto every device — decluttering on the
+  tablet also declutters the desktop.
+- **The header carries only what a shoot day reaches for**, and everything
+  else is behind its *More* menu. In the header: *+ Add Prop*, *+ Add Camera
+  Position*, then New, Save, Load setup, Export Floor PNG (Disguise), then
+  the px/m zoom field. In the menu: Show grid, Show studio sketch, Export
+  CSV, Report / Print, Export/Import .json. Zoom is in the header rather than
+  the menu because it gets nudged repeatedly while framing a layout, which a
+  menu that must be reopened each time works against. On a tablet the header is the only thing between the
+  crew and the canvas, so length there is the constraint being managed —
+  adding a button means deciding it belongs in that set. Nothing is ever
+  *removed* to make room and no ids change, so `toolbar.js` and `sidebar.js`
+  bind every handler exactly as before: **moving a control between the
+  header, the menu and a panel is a markup change alone.** Two things that
+  aren't free-floating, though:
+  - The two `.panel-toggle` buttons stay out of the menu: they only exist
+    below 900px, where they're how you reach the side panels at all.
+  - **The menu closes on a `<button>` and nothing else.** The view toggles
+    are checkboxes flicked on and off to compare, and Import .json is a
+    `<label>` over a file input — closing there would pull the menu out from
+    under the file dialog.
+- **A header button acting on a left-panel row has to open the drawer.**
+  *+ Add Camera Position* is in the header but its row, and the name field it
+  focuses, are in the left panel — which below 900px is a shut drawer. So it
+  calls `App.toolbar.revealLeftPanel()`; without it the press looks like it
+  did nothing and the shot name gets typed into a field nobody can see.
+  Above 900px there is no drawer and the `open` class means nothing, so that
+  call is a no-op rather than something to branch on.
 - Setups are `.json` files in `--setups-dir`, shared by every device on the
   network. Filenames come from the setup name; identity is the `id` inside.
   **GitHub Sync is a manual backup of that folder**, not the primary store.

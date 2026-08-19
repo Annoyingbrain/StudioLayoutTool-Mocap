@@ -22,6 +22,14 @@
          behind More — not removed, just not competing with these. Adding a
          button here means taking the decision that it belongs in that set. -->
     <div class="toolbar-group toolbar-group-main">
+      <!-- Placing a prop and adding a camera position are what the header is
+           reached for most during a dress, so they sit here rather than down
+           a panel that's a drawer away on the tablet. Add Prop keeps its
+           .tool-btn/data-tool wiring: it ARMS a tool rather than doing
+           something once, and the armed state is what .active shows. -->
+      <button id="tool-add-prop" class="tool-btn" data-tool="add-prop">+ Add Prop</button>
+      <button id="btn-add-camera">+ Add Camera Position</button>
+      <span class="toolbar-sep"></span>
       <button id="btn-new">New</button>
       <button id="btn-save-local">Save</button>
       <select id="setup-picker"><option value="">Load setup…</option></select>
@@ -29,9 +37,19 @@
     </div>
 
     <div class="toolbar-group toolbar-group-right">
+      <!-- Zoom is here rather than in the More menu because it's nudged
+           repeatedly while framing a layout -- a control you return to,
+           which a menu that has to be reopened each time works against. -->
+      <label class="chk toolbar-chk">px/m: <input type="number" id="view-scale" value="40" min="4" max="400" step="1"></label>
       <div class="toolbar-menu">
         <button id="btn-more" class="menu-trigger" aria-haspopup="true" aria-expanded="false">More ▾</button>
         <div id="more-menu" class="menu-panel hidden" role="menu" aria-labelledby="btn-more">
+          <!-- Checkboxes, not buttons, and the menu stays open when they're
+               clicked (see initMoreMenu) -- these get flicked on and off to
+               compare, which a menu that closed each time would make a chore. -->
+          <label class="chk" role="menuitemcheckbox"><input type="checkbox" id="chk-grid" checked> Show grid</label>
+          <label class="chk" role="menuitemcheckbox"><input type="checkbox" id="chk-studio-sketch" checked> Show studio sketch</label>
+          <div class="menu-sep"></div>
           <button id="btn-export-csv" role="menuitem">Export CSV (Disguise)</button>
           <button id="btn-report" role="menuitem">Report / Print</button>
           <div class="menu-sep"></div>
@@ -61,7 +79,7 @@
           <button id="btn-new-scene">+ New Position</button>
           <button id="btn-delete-scene" class="danger">Delete Position</button>
         </div>
-        <p class="hint">Each position has its own props and frame grab.</p>
+        <p class="hint">Each position has its own props. Frame grabs hang off the camera positions below, one each — a layout shot wide and then tight is two different reference pictures.</p>
       </section>
 
       <section class="panel" id="prop-list-panel">
@@ -72,22 +90,8 @@
       <section class="panel" id="camera-list-panel">
         <h3>Cameras <span id="camera-count" class="muted"></span></h3>
         <div id="camera-list"></div>
-        <button id="btn-add-camera">+ Add Camera Position</button>
-        <p class="hint">One prop layout can be shot from several camera positions. Add one per shot and name it for the shot it covers ("Wide", "Interview 2") — the name is what labels it on the exported floor plan and in the Disguise CSV, so it's worth typing something the crew will recognise. Every camera position here belongs to the position selected above, and they all carry over when you add a new position.</p>
-      </section>
-
-      <section class="panel">
-        <h3>Tools</h3>
-        <!-- No "Select / Move" button: select is the resting state, not
-             something to switch to. Placing a prop drops straight back to it
-             (canvas.js), so the button only ever un-armed Add Prop -- which
-             Add Prop now does itself by toggling. -->
-        <button id="tool-add-prop" class="tool-btn tool-btn-primary" data-tool="add-prop">+ Add Prop</button>
-        <div class="tool-row">
-          <label class="chk"><input type="checkbox" id="chk-grid" checked> Show grid</label>
-          <label class="chk"><input type="checkbox" id="chk-studio-sketch" checked> Show studio sketch</label>
-          <label class="chk">px/m: <input type="number" id="view-scale" value="40" min="4" max="400" step="1"></label>
-        </div>
+        <button id="btn-show-all-cameras" class="hidden">Show All Cameras</button>
+        <p class="hint">One prop layout can be shot from several camera positions. <strong>+ Add Camera Position</strong> is in the header; add one per shot and name it for the shot it covers ("Wide", "Interview 2") — the name is what labels it on the exported floor plan and in the Disguise CSV, so it's worth typing something the crew will recognise. Every camera position here belongs to the position selected above, and they all carry over when you add a new position. <strong>Hide</strong> takes a camera off the canvas when several of them overlap into a mess — it stays in this list, stays editable, and every export (floor PNG, CSV, report) still draws it, so hiding never leaves a camera out of the plan.</p>
       </section>
 
       <section class="panel" id="live-panel">
@@ -98,15 +102,32 @@
           <button id="btn-live-disconnect">Disconnect</button>
         </div>
         <div id="live-status" class="small muted"></div>
-        <p class="hint">Requires server.py running (see requirements.txt) -- the browser can't reach Motive on its own. Assign each incoming rigid body below to a camera or prop to drive its position/rotation live. Each row has its own axis/rotation/height calibration underneath it — every Motive asset has its own local frame, so these don't share one global value. For a known tracker just pick it from <em>apply profile…</em> (Camera Tracker and T-bar are already calibrated); rows arrive named by number rather than by asset, so that pick can't happen automatically. Otherwise get the axis right first: if it's wrong, rotation jitters and tilt sits near ±90° with the object level, and no offset can fix that. "rot°" is a day-to-day adjustment ON TOP of that row's already-calibrated baseline — it defaults to 0, and 0 means "trust the calibration." Re-placing a tracker by hand naturally reads a few degrees different each time; only change this for a real, repeated discrepancy, not a one-off reading. "h(m)" only matters for a row driving a camera.</p>
+        <!-- Folded away by default: this is reference material read once when
+             setting a tracker up, and left open it pushed the rigid-body list --
+             the part actually used during a shoot -- off the bottom of the panel.
+             <details> rather than JS: the arrow, the toggle and the keyboard
+             behaviour all come free, and it degrades to visible text if CSS fails. -->
+        <details class="hint-details">
+          <summary>How tracking and calibration work</summary>
+          <p class="hint">Requires server.py running (see requirements.txt) -- the browser can't reach Motive on its own. Assign each incoming rigid body below to a camera or prop to drive its position/rotation live. Each row has its own axis/rotation/height calibration underneath it — every Motive asset has its own local frame, so these don't share one global value. For a known tracker just pick it from <em>apply profile…</em> (Camera Tracker and T-bar are already calibrated); rows arrive named by number rather than by asset, so that pick can't happen automatically. Otherwise get the axis right first: if it's wrong, rotation jitters and tilt sits near ±90° with the object level, and no offset can fix that. "rot°" is a day-to-day adjustment ON TOP of that row's already-calibrated baseline — it defaults to 0, and 0 means "trust the calibration." Re-placing a tracker by hand naturally reads a few degrees different each time; only change this for a real, repeated discrepancy, not a one-off reading. "h(m)" only matters for a row driving a camera.</p>
+        </details>
         <div id="live-rigidbody-list"></div>
       </section>
 
       <section class="panel" id="framegrab-panel">
         <h3>Frame Grab Reference</h3>
-        <label class="file-btn block">Import frame grab<input id="import-framegrab" type="file" accept="image/*"></label>
-        <img id="framegrab-thumb" class="thumb hidden" alt="frame grab">
-        <textarea id="framegrab-caption" placeholder="Caption / camera notes…" rows="2"></textarea>
+        <!-- One frame grab per CAMERA POSITION, not per position: a layout
+             shot wide and then tight is two different pictures. Which camera
+             it lands on follows the Inspector (Store.getInspectedCamera), so
+             the panel has to name it -- otherwise importing a grab silently
+             writes it to whichever camera happened to be picked. -->
+        <div id="framegrab-for" class="small muted"></div>
+        <div id="framegrab-empty" class="muted small hidden">Select a camera position to give it a frame grab.</div>
+        <div id="framegrab-fields">
+          <label class="file-btn block">Import frame grab<input id="import-framegrab" type="file" accept="image/*"></label>
+          <img id="framegrab-thumb" class="thumb hidden" alt="frame grab">
+          <textarea id="framegrab-caption" placeholder="Caption / camera notes…" rows="2"></textarea>
+        </div>
       </section>
 
       <section class="panel" id="github-panel">
