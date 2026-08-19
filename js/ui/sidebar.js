@@ -615,10 +615,36 @@ window.App = window.App || {};
     }
   }
 
+  // The collapsible list panels (Cameras, Props) remember whether they were
+  // left open. The folding itself is native <details> and needs no JS; this
+  // is only the memory, because the app is hard-refreshed constantly and a
+  // panel that springs back open every time is one nobody bothers folding.
+  //
+  // Written on toggle rather than on unload: a tablet's browser tab is closed
+  // by swiping it away, which fires no reliable unload.
+  function bindPanelCollapse() {
+    const panels = dom.qsa('.panel-collapse[data-collapse-key]');
+    // Nothing to restore, so nothing to read -- which also keeps the headless
+    // test harness (no such markup, no localStorage) out of persistence.
+    if (!panels.length) return;
+    const stored = App.persistence.loadPanelCollapse();
+    panels.forEach(el => {
+      const key = el.dataset.collapseKey;
+      // Only an explicit `true` closes one: an unknown key (a panel added
+      // later, or a cleared localStorage) keeps the markup's own default,
+      // which is open.
+      if (stored[key] === true) el.open = false;
+      el.addEventListener('toggle', () => {
+        App.persistence.savePanelCollapse({ [key]: !el.open });
+      });
+    });
+  }
+
   App.sidebar = {
     init() {
       bindInspector();
       bindCameraInspector();
+      bindPanelCollapse();
       const renderAll = () => {
         renderPropList(); renderPropPicker(); renderInspector();
         renderCameraList(); renderCameraPicker(); renderCameraInspector();

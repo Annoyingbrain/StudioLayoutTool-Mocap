@@ -3,6 +3,7 @@
 window.App = window.App || {};
 
 const LS_MOTIVE_CALIBRATION_KEY = 'vps_motive_calibration';
+const LS_PANEL_COLLAPSE_KEY = 'vps_panel_collapse';
 
 // Older saved/exported setups (before multi-scene support) kept props,
 // frameGrab and view directly on the setup instead of inside a scenes array.
@@ -89,6 +90,21 @@ App.persistence = {
     const raw = localStorage.getItem(LS_MOTIVE_CALIBRATION_KEY);
     if (!raw) return null;
     try { return JSON.parse(raw); } catch (e) { return null; }
+  },
+
+  // Which collapsible panels are folded shut ({ cameras: true, ... }). A
+  // per-device view preference, not setup data: a tablet in the studio and
+  // the desktop want different things folded away, and putting it in the
+  // shared setup file would mean one of them re-tidying after every save.
+  savePanelCollapse(state) {
+    const merged = Object.assign({}, this.loadPanelCollapse(), state);
+    localStorage.setItem(LS_PANEL_COLLAPSE_KEY, JSON.stringify(merged));
+  },
+
+  loadPanelCollapse() {
+    const raw = localStorage.getItem(LS_PANEL_COLLAPSE_KEY);
+    if (!raw) return {};
+    try { return JSON.parse(raw) || {}; } catch (e) { return {}; }
   },
 
   exportToFile(setup) {

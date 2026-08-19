@@ -82,16 +82,32 @@
         <p class="hint">Each position has its own props. Frame grabs hang off the camera positions below, one each — a layout shot wide and then tight is two different reference pictures.</p>
       </section>
 
-      <section class="panel" id="prop-list-panel">
-        <h3>Props <span id="prop-count" class="muted"></span></h3>
-        <div id="prop-list"></div>
+      <!-- Cameras ABOVE props: a shoot day starts from where the camera goes
+           and dresses the props around it, so the camera list is what gets
+           reached for first and shouldn't be scrolled past.
+
+           Both lists collapse, because with several camera positions and a
+           dressed layout the two together are taller than the panel and one
+           always pushes the other off the bottom. Native <details>: the
+           arrow, the toggle and the keyboard behaviour come free, and it
+           degrades to plain visible content if CSS fails -- same reasoning as
+           Live Tracking's .hint-details. The open/shut state is remembered
+           per browser (js/ui/sidebar.js's panel-collapse handling), or every
+           hard refresh would undo the tidying. -->
+      <section class="panel" id="camera-list-panel">
+        <details class="panel-collapse" data-collapse-key="cameras" open>
+          <summary><h3>Cameras <span id="camera-count" class="muted"></span></h3></summary>
+          <div id="camera-list"></div>
+          <button id="btn-show-all-cameras" class="hidden">Show All Cameras</button>
+          <p class="hint">One prop layout can be shot from several camera positions. <strong>+ Add Camera Position</strong> is in the header; add one per shot and name it for the shot it covers ("Wide", "Interview 2") — the name is what labels it on the exported floor plan and in the Disguise CSV, so it's worth typing something the crew will recognise. Every camera position here belongs to the position selected above, and they all carry over when you add a new position. <strong>Hide</strong> takes a camera off the canvas when several of them overlap into a mess — it stays in this list, stays editable, and every export (floor PNG, CSV, report) still draws it, so hiding never leaves a camera out of the plan.</p>
+        </details>
       </section>
 
-      <section class="panel" id="camera-list-panel">
-        <h3>Cameras <span id="camera-count" class="muted"></span></h3>
-        <div id="camera-list"></div>
-        <button id="btn-show-all-cameras" class="hidden">Show All Cameras</button>
-        <p class="hint">One prop layout can be shot from several camera positions. <strong>+ Add Camera Position</strong> is in the header; add one per shot and name it for the shot it covers ("Wide", "Interview 2") — the name is what labels it on the exported floor plan and in the Disguise CSV, so it's worth typing something the crew will recognise. Every camera position here belongs to the position selected above, and they all carry over when you add a new position. <strong>Hide</strong> takes a camera off the canvas when several of them overlap into a mess — it stays in this list, stays editable, and every export (floor PNG, CSV, report) still draws it, so hiding never leaves a camera out of the plan.</p>
+      <section class="panel" id="prop-list-panel">
+        <details class="panel-collapse" data-collapse-key="props" open>
+          <summary><h3>Props <span id="prop-count" class="muted"></span></h3></summary>
+          <div id="prop-list"></div>
+        </details>
       </section>
 
       <section class="panel" id="live-panel">

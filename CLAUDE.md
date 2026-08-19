@@ -218,6 +218,20 @@ theorising about the connection — every connection bug so far failed
   pushed the rigid-body list, the part used during a shoot, off the bottom.
   Native `<details>`, not JS: the arrow, the toggle and the keyboard
   behaviour come free and it degrades to plain visible text.
+- **The left panel leads with Cameras, then Props, and both lists fold away**
+  (`.panel-collapse`, again native `<details>` with the `<h3>` kept inside the
+  `<summary>` so the heading and its count stay visible when shut). Cameras
+  first because a shot is set up from where the camera goes and the props are
+  dressed around it; folding because several camera positions plus a dressed
+  layout are together taller than the panel, so one list always pushed the
+  other off the bottom. **The open/shut state is per browser, not per setup**
+  (`persistence.savePanelCollapse`, restored in `sidebar.js`'s
+  `bindPanelCollapse`) — the tablet and the desktop want different things
+  folded away, and the app is hard-refreshed often enough that a panel
+  springing back open every time is one nobody bothers folding. An unknown
+  key keeps the markup's default (open), so clearing localStorage or adding a
+  panel degrades to everything visible. Only the *memory* is JS; the folding
+  itself would work with the script deleted.
 - Positions (scenes) are shots within a setup. **The camera carries over when
   a new position is added; props don't** — a camera is studio hardware present
   for every shot, props are dressed per shot. Copies keep the same camera id
