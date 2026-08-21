@@ -33,7 +33,7 @@
       <button id="btn-new">New</button>
       <button id="btn-save-local">Save</button>
       <select id="setup-picker"><option value="">Load setup…</option></select>
-      <button id="btn-export-floor-png">Export Floor PNG (Disguise)</button>
+      <button id="btn-export-floor-png-props">Export Floor PNG (props)</button>
     </div>
 
     <div class="toolbar-group toolbar-group-right">
@@ -50,8 +50,24 @@
           <label class="chk" role="menuitemcheckbox"><input type="checkbox" id="chk-grid" checked> Show grid</label>
           <label class="chk" role="menuitemcheckbox"><input type="checkbox" id="chk-studio-sketch" checked> Show studio sketch</label>
           <div class="menu-sep"></div>
+          <!-- The header's Export Floor PNG draws the props alone -- that's
+               the floor layer, where camera positions are clutter; this
+               draws the same plan with them on it. Two buttons rather than a
+               checkbox on one: the menu is shut when the header button is
+               pressed, so a hidden toggle would silently decide which of the
+               two you got.
+               The ids track the CONTENT, not the location, so which of these
+               sits in the header is a markup change alone -- toolbar.js
+               binds each id to its own variant either way. -->
+          <button id="btn-export-floor-png" role="menuitem">Export Floor PNG (with camera positions)</button>
           <button id="btn-export-csv" role="menuitem">Export CSV (Disguise)</button>
           <button id="btn-report" role="menuitem">Report / Print</button>
+          <div class="menu-sep"></div>
+          <!-- Everything the panels used to explain under each control lives
+               in here now: the instructions are read once while learning the
+               tool and then never again, but they were costing panel height
+               on every shoot day. A <button>, so the menu closes on it. -->
+          <button id="btn-help" role="menuitem">Help</button>
           <div class="menu-sep"></div>
           <button id="btn-export-json" role="menuitem">Export .json</button>
           <label class="file-btn menu-file" role="menuitem">Import .json<input id="import-json" type="file" accept="application/json"></label>
@@ -71,6 +87,20 @@
 
       <button id="btn-close-left" class="panel-close" aria-label="Close panel">✕ Close</button>
 
+      <!-- Days sit above Position because they contain it: one setup and one
+           position get shot across several days, and what changes between
+           them is where the cameras go. Same shape as the Position block
+           below it, deliberately -- they are the same kind of control. -->
+      <section class="panel" id="day-panel">
+        <h3>Shoot day</h3>
+        <select id="day-picker"></select>
+        <label>Day name <input id="day-name" type="text"></label>
+        <div class="tool-row">
+          <button id="btn-new-day">+ New Day</button>
+          <button id="btn-delete-day" class="danger">Delete Day</button>
+        </div>
+      </section>
+
       <section class="panel" id="scene-panel">
         <h3>Position</h3>
         <select id="scene-picker"></select>
@@ -79,7 +109,6 @@
           <button id="btn-new-scene">+ New Position</button>
           <button id="btn-delete-scene" class="danger">Delete Position</button>
         </div>
-        <p class="hint">Each position has its own props. Frame grabs hang off the camera positions below, one each — a layout shot wide and then tight is two different reference pictures.</p>
       </section>
 
       <!-- Cameras ABOVE props: a shoot day starts from where the camera goes
@@ -90,8 +119,9 @@
            dressed layout the two together are taller than the panel and one
            always pushes the other off the bottom. Native <details>: the
            arrow, the toggle and the keyboard behaviour come free, and it
-           degrades to plain visible content if CSS fails -- same reasoning as
-           Live Tracking's .hint-details. The open/shut state is remembered
+           degrades to plain visible content if CSS fails. (Live Tracking's
+           long hint used to fold the same way; it lives in Help now.)
+           The open/shut state is remembered
            per browser (js/ui/sidebar.js's panel-collapse handling), or every
            hard refresh would undo the tidying. -->
       <section class="panel" id="camera-list-panel">
@@ -99,7 +129,6 @@
           <summary><h3>Cameras <span id="camera-count" class="muted"></span></h3></summary>
           <div id="camera-list"></div>
           <button id="btn-show-all-cameras" class="hidden">Show All Cameras</button>
-          <p class="hint">One prop layout can be shot from several camera positions. <strong>+ Add Camera Position</strong> is in the header; add one per shot and name it for the shot it covers ("Wide", "Interview 2") — the name is what labels it on the exported floor plan and in the Disguise CSV, so it's worth typing something the crew will recognise. Every camera position here belongs to the position selected above, and they all carry over when you add a new position. <strong>Hide</strong> takes a camera off the canvas when several of them overlap into a mess — it stays in this list, stays editable, and every export (floor PNG, CSV, report) still draws it, so hiding never leaves a camera out of the plan.</p>
         </details>
       </section>
 
@@ -107,6 +136,11 @@
         <details class="panel-collapse" data-collapse-key="props" open>
           <summary><h3>Props <span id="prop-count" class="muted"></span></h3></summary>
           <div id="prop-list"></div>
+          <!-- Hiding a prop takes it off the canvas AND out of every export,
+               unlike hiding a camera position, which is decluttering only.
+               A hidden prop means "not in this shot", so a plan that still
+               drew it would be wrong. -->
+          <button id="btn-show-all-props" class="hidden">Show All Props</button>
         </details>
       </section>
 
@@ -123,10 +157,6 @@
              the part actually used during a shoot -- off the bottom of the panel.
              <details> rather than JS: the arrow, the toggle and the keyboard
              behaviour all come free, and it degrades to visible text if CSS fails. -->
-        <details class="hint-details">
-          <summary>How tracking and calibration work</summary>
-          <p class="hint">Requires server.py running (see requirements.txt) -- the browser can't reach Motive on its own. Assign each incoming rigid body below to a camera or prop to drive its position/rotation live. Each row has its own axis/rotation/height calibration underneath it — every Motive asset has its own local frame, so these don't share one global value. For a known tracker just pick it from <em>apply profile…</em> (Camera Tracker and T-bar are already calibrated); rows arrive named by number rather than by asset, so that pick can't happen automatically. Otherwise get the axis right first: if it's wrong, rotation jitters and tilt sits near ±90° with the object level, and no offset can fix that. "rot°" is a day-to-day adjustment ON TOP of that row's already-calibrated baseline — it defaults to 0, and 0 means "trust the calibration." Re-placing a tracker by hand naturally reads a few degrees different each time; only change this for a real, repeated discrepancy, not a one-off reading. "h(m)" only matters for a row driving a camera.</p>
-        </details>
         <div id="live-rigidbody-list"></div>
       </section>
 
@@ -156,7 +186,6 @@
         <label>Branch <input id="gh-branch" type="text" placeholder="main" value="main" spellcheck="false"></label>
         <button id="btn-save-github">Back Up All Setups to GitHub</button>
         <div id="gh-status" class="small muted"></div>
-        <p class="hint">Saves the setup you're in, then backs up <em>every</em> setup on this machine the repo hasn't already got the latest version of — so one press at the end of the day covers everything you worked on, not just what's open. Each goes up as one JSON file (setups/&lt;id&gt;.json, all its positions, props and frame grabs, overwritten each time) via GitHub's API; setups unchanged since their last backup are skipped. The token is stored only in this browser — use a fine-grained token scoped to just that one repo with Contents: read/write.</p>
 
         <div class="subheading">Load from GitHub</div>
         <select id="gh-load-picker"><option value="">Fill in token/owner/repo first</option></select>
@@ -226,13 +255,11 @@
             <label>Height <span class="size-readout" id="cam-insp-height-readout">—</span></label>
             <label>Tilt <span class="size-readout" id="cam-insp-tilt-readout">—</span></label>
           </div>
-          <p class="hint">Height and tilt come from live tracking (Motive's up-axis and the rigid body's orientation) — they can't be typed in. Tilt shares the same uncalibrated forward-axis assumption as Rotation.</p>
           <label>Color <input id="cam-insp-color" type="color" value="#4da6ff"></label>
           <label>Notes <textarea id="cam-insp-notes" rows="2"></textarea></label>
           <div class="position-source small muted" id="cam-insp-position-source"></div>
 
           <div class="subheading">Movement Recording</div>
-          <p class="hint">Records this camera's live movement as a path on the floor plan, with its start and end position marked. Assign it to a rigid body in Live Tracking first, then press Record and perform the move. <strong>Only movement is kept</strong> — time the camera spends parked adds no points, so you can start recording, take your time, and stop afterwards without padding the path. If the camera never moves, the recording saves its tracked position as a static camera position instead, replacing any path it had before.</p>
           <div class="tool-row">
             <button id="btn-record-movement">● Record Movement</button>
             <button id="btn-clear-trail">Clear Path</button>
@@ -269,5 +296,54 @@
 <script src="js/ui/githubSync.js"></script>
 <script src="js/ui/toolbar.js"></script>
 <script src="js/main.js"></script>
+
+  <!-- Help. The panels used to carry these as a hint under each control,
+       which read well the first week and was clutter every week after --
+       instructions are read while learning the tool, not during a shoot,
+       while the height they took was gone from the panel permanently.
+       Opened from the More menu; closes on its button, on the backdrop, or
+       on Escape. -->
+  <div id="help-overlay" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <div class="modal" role="document">
+      <div class="modal-head">
+        <h2 id="help-title">Help</h2>
+        <button id="btn-help-close" class="modal-close" aria-label="Close help">✕ Close</button>
+      </div>
+      <div class="modal-body">
+        <section>
+          <h3>Shoot days</h3>
+          <p>The studio and the positions stay put across days; the <strong>props and camera positions</strong> belong to a day. A new day <strong>copies the props</strong> where they currently stand — the set is usually yesterday's with things moved — but <strong>starts its camera positions fresh</strong>, since those get re-rigged. Once copied they're separate: moving a prop today does not touch a day already shot. The lists, the canvas and every export (floor PNG, CSV, report) show the day selected here, and its name goes into the exported filename so one day never overwrites another. Deleting a day deletes its props and camera positions in every position.</p>
+        </section>
+        <section>
+          <h3>Positions</h3>
+          <p>Each position has its own props, per shoot day. Frame grabs hang off the camera positions in the Cameras list, one each — a layout shot wide and then tight is two different reference pictures.</p>
+        </section>
+        <section>
+          <h3>Camera positions</h3>
+          <p>One prop layout can be shot from several camera positions. <strong>+ Add Camera Position</strong> is in the header; add one per shot and name it for the shot it covers ("Wide", "Interview 2") — the name is what labels it on the exported floor plan and in the Disguise CSV, so it's worth typing something the crew will recognise. Every camera position belongs to the position <em>and</em> the shoot day selected in the left panel, and they all carry over when you add a new position (a new <em>day</em> starts fresh instead). <strong>Hide</strong> takes a camera off the canvas when several of them overlap into a mess — it stays in this list, stays editable, and every export (floor PNG, CSV, report) still draws it, so hiding never leaves a camera out of the plan.</p>
+        </section>
+        <section>
+          <h3>Props</h3>
+          <p><strong>Hide</strong> a prop to take it out of the shot without deleting it — it comes off the canvas and out of the floor PNG, the CSV and the report, but keeps its row, stays editable and can still be measured with a tracker. Hiding is per shoot day and per position, so hiding the sofa today leaves yesterday's plan as it was shot. (Hiding a <em>camera position</em> is different: that one only declutters the canvas, and every export still draws it.)</p>
+        </section>
+        <section>
+          <h3>Live tracking and calibration</h3>
+          <p>Requires server.py running (see requirements.txt) -- the browser can't reach Motive on its own. Assign each incoming rigid body in the Live Tracking panel to a camera or prop to drive its position/rotation live. Each row there has its own axis/rotation/height calibration underneath it — every Motive asset has its own local frame, so these don't share one global value. For a known tracker just pick it from <em>apply profile…</em> (Camera Tracker and T-bar are already calibrated); rows arrive named by number rather than by asset, so that pick can't happen automatically. Otherwise get the axis right first: if it's wrong, rotation jitters and tilt sits near ±90° with the object level, and no offset can fix that. "rot°" is a day-to-day adjustment ON TOP of that row's already-calibrated baseline — it defaults to 0, and 0 means "trust the calibration." Re-placing a tracker by hand naturally reads a few degrees different each time; only change this for a real, repeated discrepancy, not a one-off reading. "h(m)" only matters for a row driving a camera.</p>
+        </section>
+        <section>
+          <h3>Camera height and tilt</h3>
+          <p>Height and tilt come from live tracking (Motive's up-axis and the rigid body's orientation) — they can't be typed in. Tilt shares the same uncalibrated forward-axis assumption as Rotation.</p>
+        </section>
+        <section>
+          <h3>Recording a camera move</h3>
+          <p>Records this camera's live movement as a path on the floor plan, with its start and end position marked. Assign it to a rigid body in Live Tracking first, then press Record and perform the move. <strong>Only movement is kept</strong> — time the camera spends parked adds no points, so you can start recording, take your time, and stop afterwards without padding the path. If the camera never moves, the recording saves its tracked position as a static camera position instead, replacing any path it had before.</p>
+        </section>
+        <section>
+          <h3>GitHub backup</h3>
+          <p>Saves the setup you're in, then backs up <em>every</em> setup on this machine the repo hasn't already got the latest version of — so one press at the end of the day covers everything you worked on, not just what's open. Each goes up as one JSON file (setups/&lt;id&gt;.json, all its positions, props and frame grabs, overwritten each time) via GitHub's API; setups unchanged since their last backup are skipped. The token is stored only in this browser — use a fine-grained token scoped to just that one repo with Contents: read/write.</p>
+        </section>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

@@ -77,7 +77,7 @@ function recordingContext(ops, ctxId) {
 
 // Renders one scene through the real js/floorPngExport.js and returns every
 // drawing op. `exportOps` is the subset on the export canvas itself.
-function renderFloorPng(setup, scene) {
+function renderFloorPng(setup, scene, options) {
   const ops = [];
   let ctxSeq = 0;
   const sandbox = {
@@ -102,7 +102,7 @@ function renderFloorPng(setup, scene) {
   const App = loadFiles(sandbox, [
     'js/utils/geometry.js', 'js/csvExport.js', 'js/studioSketch.js', 'js/floorPngExport.js'
   ]);
-  App.floorPngExport.buildCanvas(setup, scene);
+  App.floorPngExport.buildCanvas(setup, scene, options);
 
   const exportOps = ops.filter(o => o.ctxId === 0);
   return {

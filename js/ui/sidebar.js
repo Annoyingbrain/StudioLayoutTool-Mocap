@@ -61,9 +61,11 @@ window.App = window.App || {};
   // only rebuild when something STRUCTURAL changes, and let the per-frame
   // path rewrite the measured/manual badge in place.
   function propListStructureKey() {
-    const scene = App.Store.getScene();
+    // getProps(), not scene.props: this panel shows ONE SHOOT DAY. Switching
+    // day changes every id here, so the list rebuilds rather than being
+    // updated in place with rows that belong to another day.
     return [
-      scene.props.map(p => `${p.id}:${p.name}:${p.color}`).join('|'),
+      App.Store.getProps().map(p => `${p.id}:${p.name}:${p.color}:${p.hidden ? 'h' : 'v'}`).join('|'),
       App.Store.getSelectedPropId(),
       JSON.stringify(App.liveTracking.getAssignments())
     ].join('##');
@@ -72,13 +74,34 @@ window.App = window.App || {};
   const propSrcElById = {};
   let lastPropListKey = null;
 
+  // Show/Hide for one prop. Unlike the camera equivalent this takes the prop
+  // OUT OF THE PLAN as well as off the canvas -- it means "this piece isn't in
+  // this shot", so an export that still drew it would be wrong in the
+  // direction that matters. Nothing leaves the setup: the row stays, the
+  // inspector still edits it, and a tracker can still be parked on it.
+  function renderPropEyeButton(prop) {
+    return dom.el('button', {
+      class: 'prop-row-eye',
+      text: prop.hidden ? 'Show' : 'Hide',
+      title: prop.hidden
+        ? `"${prop.name}" is hidden — it is off the canvas AND off every export for this day`
+        : `Hide "${prop.name}" — it comes off the canvas and out of the floor PNG, CSV and report`,
+      onclick: e => {
+        // As on the link buttons: without this the row's own handler fires
+        // too and changes what the inspector is pointed at.
+        e.stopPropagation();
+        App.Store.togglePropHidden(prop.id);
+      }
+    });
+  }
+
   function renderPropList() {
-    const scene = App.Store.getScene();
-    dom.qs('#prop-count').textContent = `(${scene.props.length})`;
+    const props = App.Store.getProps();
+    dom.qs('#prop-count').textContent = `(${props.length})`;
 
     const key = propListStructureKey();
     if (key === lastPropListKey) {
-      scene.props.forEach(p => {
+      props.forEach(p => {
         const el = propSrcElById[p.id];
         if (!el) return;
         const measured = p.positionSource === 'measured';
@@ -95,7 +118,7 @@ window.App = window.App || {};
     dom.clear(list);
     Object.keys(propSrcElById).forEach(k => delete propSrcElById[k]);
 
-    scene.props.forEach(p => {
+    props.forEach(p => {
       const srcEl = dom.el('span', {
         class: 'prop-row-src' + (p.positionSource === 'measured' ? ' measured' : ''),
         text: p.positionSource === 'measured' ? 'measured' : 'manual'
@@ -108,30 +131,40 @@ window.App = window.App || {};
       // nothing on the tablet's narrow drawer exactly when the list needed
       // to be readable one-handed.
       const row = dom.el('div', {
-        class: 'prop-row' + (p.id === selectedId ? ' selected' : ''),
+        class: 'prop-row' + (p.id === selectedId ? ' selected' : '') + (p.hidden ? ' row-hidden' : ''),
         onclick: () => App.Store.selectProp(p.id)
       }, [
         dom.el('div', { class: 'prop-row-main' }, [
           dom.el('span', { class: 'swatch', style: `background:${p.color}` }),
           dom.el('span', { class: 'prop-row-name', text: p.name })
         ]),
-        dom.el('div', { class: 'prop-row-actions' }, [srcEl].concat(renderTrackerLinkButtons(p)))
+        dom.el('div', { class: 'prop-row-actions' },
+          [srcEl].concat(renderTrackerLinkButtons(p), [renderPropEyeButton(p)]))
       ]);
       list.appendChild(row);
     });
+
+    // Only while something is hidden -- a permanent button for a state
+    // nothing is in is a control to read past every time.
+    const hiddenCount = App.Store.getHiddenPropCount();
+    const showAll = dom.qs('#btn-show-all-props');
+    showAll.classList.toggle('hidden', hiddenCount === 0);
+    showAll.textContent = `Show All Props (${hiddenCount} hidden)`;
   }
 
   function renderPropPicker() {
-    const scene = App.Store.getScene();
+    // Day-scoped like the list above -- another day's props aren't on screen
+    // and must not be pickable in the inspector.
+    const props = App.Store.getProps();
     const selectedId = App.Store.getSelectedPropId();
     const picker = dom.qs('#insp-prop-picker');
     if (document.activeElement === picker) return;
     dom.clear(picker);
     picker.appendChild(dom.el('option', { value: '', text: 'Select a prop…' }));
-    scene.props.forEach(p => {
+    props.forEach(p => {
       picker.appendChild(dom.el('option', { value: p.id, text: p.name }));
     });
-    picker.value = selectedId && scene.props.some(p => p.id === selectedId) ? selectedId : '';
+    picker.value = selectedId && props.some(p => p.id === selectedId) ? selectedId : '';
   }
 
   function setVal(id, val) {
@@ -310,9 +343,12 @@ window.App = window.App || {};
   // prevent. The name is instead written back in place below, and only when
   // the field isn't focused.
   function cameraListStructureKey() {
-    const scene = App.Store.getScene();
+    // getCameras(), not scene.cameras: this panel shows ONE SHOOT DAY. The
+    // day is baked into the key by way of the ids it produces -- switch day
+    // and every id changes, so the list rebuilds rather than being updated in
+    // place with rows that no longer belong to it.
     return [
-      scene.cameras.map(c => `${c.id}:${c.color}:${c.hidden ? 'h' : 'v'}`).join('|'),
+      App.Store.getCameras().map(c => `${c.id}:${c.color}:${c.hidden ? 'h' : 'v'}`).join('|'),
       App.Store.getSelectedCameraId(),
       App.motiveCalibration.cameraTrackerName,
       JSON.stringify(App.liveTracking.getAssignments())
@@ -324,12 +360,16 @@ window.App = window.App || {};
   let lastCameraListKey = null;
 
   function renderCameraList() {
-    const scene = App.Store.getScene();
-    dom.qs('#camera-count').textContent = `(${scene.cameras.length})`;
+    // The open shoot day's cameras, never the position's whole set: the other
+    // days' camera positions are stored alongside these but are not what is
+    // being worked on, and listing them is listing marks that aren't on the
+    // canvas, the plan or in any export.
+    const cameras = App.Store.getCameras();
+    dom.qs('#camera-count').textContent = `(${cameras.length})`;
 
     const key = cameraListStructureKey();
     if (key === lastCameraListKey) {
-      scene.cameras.forEach(c => {
+      cameras.forEach(c => {
         const el = cameraSrcElById[c.id];
         if (!el) return;
         const measured = c.positionSource === 'measured';
@@ -353,7 +393,7 @@ window.App = window.App || {};
     Object.keys(cameraSrcElById).forEach(k => delete cameraSrcElById[k]);
     Object.keys(cameraNameElById).forEach(k => delete cameraNameElById[k]);
 
-    scene.cameras.forEach(c => {
+    cameras.forEach(c => {
       const srcEl = dom.el('span', {
         class: 'prop-row-src' + (c.positionSource === 'measured' ? ' measured' : ''),
         text: c.positionSource === 'measured' ? 'measured' : 'manual'
@@ -415,10 +455,12 @@ window.App = window.App || {};
   // Shown as soon as a scene carries several camera positions, which would
   // otherwise be uneditable.
   function renderCameraPicker() {
-    const scene = App.Store.getScene();
+    // Day-scoped like the list above -- with one camera on this day there is
+    // nothing to pick, however many are parked on the other days.
+    const cameras = App.Store.getCameras();
     const selectedId = App.Store.getSelectedCameraId();
     const picker = dom.qs('#cam-insp-picker');
-    const single = scene.cameras.length <= 1;
+    const single = cameras.length <= 1;
     picker.classList.toggle('hidden', single);
     // Same for deleting, even though "+ Add Camera Position" could put one
     // back: every scene is guaranteed at least one camera (see
@@ -428,10 +470,10 @@ window.App = window.App || {};
     if (single || document.activeElement === picker) return;
     dom.clear(picker);
     picker.appendChild(dom.el('option', { value: '', text: 'Select a camera…' }));
-    scene.cameras.forEach(c => {
+    cameras.forEach(c => {
       picker.appendChild(dom.el('option', { value: c.id, text: c.name }));
     });
-    picker.value = selectedId && scene.cameras.some(c => c.id === selectedId) ? selectedId : '';
+    picker.value = selectedId && cameras.some(c => c.id === selectedId) ? selectedId : '';
   }
 
   function renderCameraInspector() {
@@ -527,6 +569,16 @@ window.App = window.App || {};
       // wherever the crew is actually working.
       const base = cameras.length ? cameras[cameras.length - 1] : App.factories.DEFAULT_CAMERA_POS;
       const camera = App.factories.newCamera(base.x + 1, base.y, cameras.length);
+      // Belongs to the day that's open. A camera position is rigged for one
+      // shoot day -- that's what a day IS here -- so this is the whole of
+      // "saved in the current day": everything downstream filters on it.
+      camera.dayId = App.Store.getActiveDayId();
+      // Colour picked from what's free, not from a count -- the same reason
+      // the name below skips names already taken. The colour is how a camera
+      // is identified on the exported plan, so a repeat says two marks are
+      // one camera.
+      camera.color = App.factories.pickCameraColor(
+        App.Store.getSetupCameraColors(), App.Store.getDayCameraColors(), cameras.length);
       // Skip names already in use rather than counting -- after a delete,
       // length + 1 collides, and two rows both called "Camera 2" is exactly
       // the confusion these names exist to prevent.
@@ -551,6 +603,7 @@ window.App = window.App || {};
     });
 
     dom.qs('#btn-show-all-cameras').addEventListener('click', () => App.Store.showAllCameras());
+    dom.qs('#btn-show-all-props').addEventListener('click', () => App.Store.showAllProps());
 
     dom.qs('#btn-delete-camera').addEventListener('click', () => {
       const camera = App.Store.getInspectedCamera();
@@ -603,7 +656,7 @@ window.App = window.App || {};
       status.textContent = `Recording… ${App.liveRecording.getSampleCount()} points captured.`;
       status.className = 'small err-warn';
     } else if (recording) {
-      const other = App.Store.getCameras().find(c => c.id === App.liveRecording.getCameraId());
+      const other = App.Store.findCamera(App.liveRecording.getCameraId());
       status.textContent = `Recording "${other ? other.name : 'another camera'}" — stop that first.`;
       status.className = 'small muted';
     } else if (camera.trail) {

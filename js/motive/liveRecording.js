@@ -106,7 +106,10 @@ window.App = window.App || {};
   // Called on every liveTracking emission while recording.
   function sample() {
     if (!recordingCameraId) return;
-    const camera = App.Store.getCameras().find(c => c.id === recordingCameraId);
+    // findCamera, not getCameras(): that list is filtered to the open shoot
+    // day, and a recording switched away from mid-move would silently stop
+    // writing rather than finishing the path it was started for.
+    const camera = App.Store.findCamera(recordingCameraId);
     if (!camera) { App.liveRecording.cancel(); return; }
 
     // Only record while the camera is actually being driven and Motive is

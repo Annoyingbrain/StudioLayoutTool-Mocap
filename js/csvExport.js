@@ -76,7 +76,11 @@ App.csvExport = {
     if (!scene.props.length && !scene.cameras.length) { App.toast('No props or cameras to export yet.', true); return; }
     const csv = this.buildCsv(scene);
     const blob = new Blob([csv], { type: 'text/csv' });
-    const safeName = `${setup.name || 'setup'}_Position_${scene.name || '1'}`.replace(/[^a-z0-9_\-]+/gi, '_');
+    // The shoot day is in the filename because the rows differ by it: this
+    // holds one day's camera positions, and Day 2's file landing on Day 1's
+    // name is a plan swapped without anyone touching it.
+    const day = scene.dayName ? `_${scene.dayName}` : '';
+    const safeName = `${setup.name || 'setup'}_Position_${scene.name || '1'}${day}`.replace(/[^a-z0-9_\-]+/gi, '_');
     App.dom.downloadBlob(`${safeName}.csv`, blob);
   }
 };

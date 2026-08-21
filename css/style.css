@@ -148,6 +148,12 @@ button.primary, button#btn-compute-position { background: var(--accent-dim); bor
   overflow-y: auto;
   padding: 10px;
 }
+/* Wider than the right panel because its rows carry the most controls: a
+   prop row is a measured/manual badge, one button per tracker and a
+   Hide/Show -- four things -- and at 300px the last of them ran out of room.
+   The right panel is fields and a thumbnail, so it keeps the narrower width
+   and gives the canvas the space back. */
+#left-panel { width: 344px; }
 #right-panel { border-right: none; border-left: 1px solid var(--border); }
 
 .panel {
@@ -258,18 +264,48 @@ label input[type="color"] { padding: 2px; height: 30px; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .size-readout { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
-.hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
-
-/* A hint long enough to bury the controls under it. Folded away by default;
-   the summary is the disclosure arrow's own row, so it reads as something
-   you can open rather than as a heading. */
-.hint-details > summary {
-  font-size: 11px; color: var(--muted); cursor: pointer;
-  padding: 4px 0; list-style-position: inside;
+/* ---------------- Help overlay ---------------- */
+/* The instructions that used to sit under each control. Kept as an overlay
+   rather than a panel: it's read while learning the tool and then not again,
+   so it should cost nothing on the page the rest of the time.
+   z-index sits under #report-view (1000) -- the report takes over the whole
+   screen and nothing should float above it. */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
 }
-.hint-details > summary:hover { color: var(--text); }
-.hint-details[open] > summary { color: var(--text); }
-.hint-details .hint { margin-top: 2px; }
+.modal-backdrop.hidden { display: none; }
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: min(680px, 100%);
+  max-height: min(80vh, 100%);
+  display: flex; flex-direction: column;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+}
+/* Sticky, so the way out stays reachable however far down you have read. */
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-head h2 { margin: 0; font-size: 16px; }
+.modal-close {
+  background: var(--panel-alt); border: 1px solid var(--border);
+  color: var(--text); padding: 6px 12px; border-radius: 4px; cursor: pointer;
+}
+.modal-close:hover { border-color: var(--accent); }
+.modal-body { padding: 4px 16px 16px; overflow-y: auto; }
+.modal-body section { margin-top: 16px; }
+.modal-body h3 { margin: 0 0 4px; font-size: 13px; color: var(--accent); }
+/* Bigger than the 11px .hint these came from: down in a panel they were a
+   footnote beside the control they described, and here they are the content
+   of the page. */
+.modal-body p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--muted); }
+
 .hidden { display: none !important; }
 
 /* Taller than it needs to be for reading, because the rows are WORKED on --
@@ -289,8 +325,14 @@ label input[type="color"] { padding: 2px; height: 30px; }
 }
 .prop-row-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
 /* The buttons share the width evenly; the measured/manual badge keeps its
-   own size, because it is read rather than pressed. */
-.prop-row-actions { display: flex; align-items: center; gap: 6px; }
+   own size, because it is read rather than pressed.
+   Wrapping, so the row can't overflow the panel: these buttons deliberately
+   don't shrink (a tracker name truncated to "Trian..." is worse than a taller
+   row), so without wrap a fifth control -- or a longer tracker name in
+   motiveCalibration.propTrackerNames -- pushes the last one out of sight
+   rather than onto a second line. Costs height only when it's actually
+   needed. */
+.prop-row-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .prop-row-actions .prop-row-src { flex-shrink: 0; }
 .prop-row-actions .prop-row-eye,
 .prop-row-actions .prop-row-link { flex: 1; text-align: center; }
@@ -467,7 +509,10 @@ label input[type="color"] { padding: 2px; height: 30px; }
     transition: transform 0.2s ease;
     box-shadow: 0 0 24px rgba(0,0,0,0.5);
   }
-  #left-panel { left: 0; transform: translateX(-100%); }
+  /* Same reasoning as the desktop width above -- four controls per prop row
+     need the room. Still capped against the viewport so the drawer never
+     covers the whole screen on a phone. */
+  #left-panel { left: 0; transform: translateX(-100%); width: min(88vw, 360px); }
   #right-panel { right: 0; transform: translateX(100%); }
   #left-panel.open, #right-panel.open { transform: translateX(0); }
 

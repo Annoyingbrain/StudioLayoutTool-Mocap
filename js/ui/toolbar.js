@@ -43,6 +43,29 @@ window.App = window.App || {};
     dom.qs('#setup-name').value = App.Store.getSetup().name;
   }
 
+  // Same shape as syncScenePanel below, for the same reason: a day and a
+  // position are the same kind of control. The activeElement guards matter
+  // here too -- the Store emits at ~30 Hz while tracking is live, and
+  // rebuilding a <select> mid-click makes it physically unclickable.
+  function syncDayPanel() {
+    const picker = dom.qs('#day-picker');
+    const activeId = App.Store.getActiveDayId();
+    const days = App.Store.getDays();
+
+    if (document.activeElement !== picker) {
+      dom.clear(picker);
+      days.forEach(d => picker.appendChild(dom.el('option', { value: d.id, text: d.name })));
+      picker.value = activeId;
+    }
+
+    const nameInput = dom.qs('#day-name');
+    const day = App.Store.getDay();
+    if (document.activeElement !== nameInput) nameInput.value = day ? day.name : '';
+
+    // Deleting the last day would leave the setup with no cameras at all.
+    dom.qs('#btn-delete-day').disabled = days.length <= 1;
+  }
+
   function syncScenePanel() {
     const picker = dom.qs('#scene-picker');
     const activeId = App.Store.getActiveSceneId();
@@ -161,6 +184,25 @@ window.App = window.App || {};
     });
   }
 
+  // Help. Closes on its own button, on the backdrop, or on Escape -- the same
+  // three ways the More menu closes, so there is nothing new to learn about
+  // getting out of it.
+  function initHelp() {
+    const overlay = dom.qs('#help-overlay');
+    const setOpen = open => overlay.classList.toggle('hidden', !open);
+
+    dom.qs('#btn-help').addEventListener('click', () => setOpen(true));
+    dom.qs('#btn-help-close').addEventListener('click', () => setOpen(false));
+    overlay.addEventListener('click', e => {
+      // The backdrop IS the overlay element; a click that started inside the
+      // dialog has a different target, so this closes only on the surround.
+      if (e.target === overlay) setOpen(false);
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') setOpen(false);
+    });
+  }
+
   function initPanelDrawers() {
     const left = dom.qs('#left-panel');
     const right = dom.qs('#right-panel');
@@ -190,10 +232,30 @@ window.App = window.App || {};
     init() {
       initPanelDrawers();
       initMoreMenu();
+      initHelp();
 
       dom.qs('#setup-name').addEventListener('input', e => {
         App.Store.getSetup().name = e.target.value;
         App.Store.touch();
+      });
+
+      dom.qs('#day-picker').addEventListener('change', e => App.Store.selectDay(e.target.value));
+      dom.qs('#day-name').addEventListener('input', e => {
+        App.Store.renameDay(App.Store.getActiveDayId(), e.target.value);
+      });
+      dom.qs('#btn-new-day').addEventListener('click', () => {
+        const day = App.Store.addDay(`Day ${App.Store.getDays().length + 1}`);
+        // The new day's camera row is in the left panel, which below 900px is
+        // a shut drawer -- same reason + Add Camera Position reveals it.
+        revealLeftPanel();
+        App.toast(`Added "${day.name}". Its camera positions start fresh.`);
+      });
+      dom.qs('#btn-delete-day').addEventListener('click', () => {
+        const day = App.Store.getDay();
+        if (App.Store.getDays().length <= 1) return;
+        if (confirm(`Delete "${day.name}" and its camera positions in every position? This can't be undone.`)) {
+          App.Store.removeDay(day.id);
+        }
       });
 
       dom.qs('#scene-picker').addEventListener('change', e => App.Store.selectScene(e.target.value));
@@ -232,9 +294,13 @@ window.App = window.App || {};
         }
       });
 
-      dom.qs('#btn-export-csv').addEventListener('click', () => App.csvExport.exportSetup(App.Store.getSetup(), App.Store.getScene()));
-      dom.qs('#btn-export-floor-png').addEventListener('click', () => App.floorPngExport.exportSetup(App.Store.getSetup(), App.Store.getScene()));
-      dom.qs('#btn-report').addEventListener('click', () => App.reportExport.open(App.Store.getSetup(), App.Store.getScene()));
+      // getSceneForDay(), not getScene(): every export draws the open shoot
+      // day's cameras and says so in its filename. Filtered once, in the
+      // Store, so the three renderers can't disagree about which day it is.
+      dom.qs('#btn-export-csv').addEventListener('click', () => App.csvExport.exportSetup(App.Store.getSetup(), App.Store.getSceneForDay()));
+      dom.qs('#btn-export-floor-png').addEventListener('click', () => App.floorPngExport.exportSetup(App.Store.getSetup(), App.Store.getSceneForDay()));
+      dom.qs('#btn-export-floor-png-props').addEventListener('click', () => App.floorPngExport.exportSetup(App.Store.getSetup(), App.Store.getSceneForDay(), { cameras: false }));
+      dom.qs('#btn-report').addEventListener('click', () => App.reportExport.open(App.Store.getSetup(), App.Store.getSceneForDay()));
 
       // [data-tool], not bare .tool-btn: the Live Tracking panel reuses that
       // class for its camera link buttons, and they aren't tools.
@@ -274,8 +340,8 @@ window.App = window.App || {};
         App.Store.touch();
       });
 
-      App.Store.subscribe(() => { syncSetupName(); syncScenePanel(); syncTools(); syncFrameGrab(); });
-      syncSetupName(); syncScenePanel(); syncTools(); syncFrameGrab();
+      App.Store.subscribe(() => { syncSetupName(); syncDayPanel(); syncScenePanel(); syncTools(); syncFrameGrab(); });
+      syncSetupName(); syncDayPanel(); syncScenePanel(); syncTools(); syncFrameGrab();
       refreshSetupPicker();
     },
     refreshSetupPicker,

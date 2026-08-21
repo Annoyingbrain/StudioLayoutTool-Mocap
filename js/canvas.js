@@ -368,7 +368,11 @@ window.App = window.App || {};
     // draw every camera regardless -- see js/floorPngExport.js.
     const cameras = App.Store.getVisibleCameras();
 
-    scene.props.forEach(p => drawProp(view, p, p.id === selectedId));
+    // The open shoot day's props, minus any hidden: the other days' dressing
+    // is stored alongside but is not what is on the floor today, and a hidden
+    // prop is not in the shot at all (unlike a hidden camera, which is only
+    // decluttered off the screen -- see Store.getVisibleProps).
+    App.Store.getVisibleProps().forEach(p => drawProp(view, p, p.id === selectedId));
     cameras.forEach(c => { if (c.trail) drawCameraTrail(view, c); });
     cameras.forEach(c => {
       if (c.trailEndpoints) {
@@ -408,9 +412,12 @@ window.App = window.App || {};
     }
   }
 
+  // Walks the same list that was drawn, or a prop that isn't on screen would
+  // be an invisible thing catching clicks.
   function hitTestProp(scene, worldPt) {
-    for (let i = scene.props.length - 1; i >= 0; i--) {
-      if (geo.pointInProp(worldPt.x, worldPt.y, scene.props[i])) return scene.props[i];
+    const props = App.Store.getVisibleProps();
+    for (let i = props.length - 1; i >= 0; i--) {
+      if (geo.pointInProp(worldPt.x, worldPt.y, props[i])) return props[i];
     }
     return null;
   }
@@ -488,7 +495,7 @@ window.App = window.App || {};
 
     const tool = App.Store.getTool();
     if (evt.button === 0 && tool === 'add-prop') {
-      const prop = App.factories.newProp(round3(world.x), round3(world.y), scene.props.length);
+      const prop = App.factories.newProp(round3(world.x), round3(world.y), App.Store.getProps().length);
       App.Store.addProp(prop);
       App.Store.setTool('select');
       return;

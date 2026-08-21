@@ -238,11 +238,27 @@ theorising about the connection — every connection bug so far failed
     threshold is deliberately far past what GitHub would accept rather than
     close to it — a wrong skip costs a day's work not backed up, a needless
     upload costs seconds — with the 422 handling covering the gap.
-- **A panel hint long enough to bury its own controls folds into a
-  `<details>`** (`.hint-details`), as Live Tracking's does — left open it
-  pushed the rigid-body list, the part used during a shoot, off the bottom.
-  Native `<details>`, not JS: the arrow, the toggle and the keyboard
-  behaviour come free and it degrades to plain visible text.
+- **Instructions live in Help, not under the controls.** Every panel used to
+  carry a `<p class="hint">` explaining the thing above it. That reads well
+  the first week and is clutter every week after — the text is read while
+  learning the tool and then never again, while the height it took was gone
+  from the panel permanently, and the panels are what a shoot day works out
+  of. They are now one `#help-overlay`, opened from *Help* in the More menu.
+  - **Don't add a new hint under a new control**; add a `<section>` to the
+    overlay. The old `.hint` / `.hint-details` CSS is gone, so a new one would
+    be unstyled rather than quietly fitting in.
+  - **Text moved out of a panel loses its deixis.** "the list below", "the day
+    selected above" pointed at something when the paragraph sat in the panel
+    and point at nothing on a Help page; each has to name the panel instead.
+    All eight were rewritten this way when they moved.
+  - The overlay closes on its button, on the backdrop, or on Escape — the same
+    three ways the More menu closes, so there is nothing new to learn about
+    getting out of it. `z-index: 500`, deliberately under `#report-view`'s
+    1000: the report takes over the whole screen and nothing should float
+    above it.
+  - Short *status* text in a panel is not a hint and stays where it is
+    (`#gh-status`, the position-source line, the canvas hint bar) — those are
+    read while using the control, not while learning it.
 - **The left panel leads with Cameras, then Props, and both lists fold away**
   (`.panel-collapse`, again native `<details>` with the `<h3>` kept inside the
   `<summary>` so the heading and its count stay visible when shut). Cameras
@@ -257,6 +273,104 @@ theorising about the connection — every connection bug so far failed
   key keeps the markup's default (open), so clearing localStorage or adding a
   panel degrades to everything visible. Only the *memory* is JS; the folding
   itself would work with the script deleted.
+  **The left panel is wider than the right** (344px vs 300px) because its
+  rows carry the most controls — a prop row is a measured/manual badge, one
+  button per tracker and a Hide/Show, four things, and at a matched 300px the
+  last of them ran out of room. The right panel is fields and a thumbnail, so
+  it keeps the narrower width and gives the canvas the space back. Don't
+  "tidy" the two back to one shared width. `.prop-row-actions` also wraps:
+  those buttons deliberately don't shrink (a tracker truncated to "Trian..."
+  is worse than a taller row), so without wrap a fifth control — or a longer
+  name in `motiveCalibration.propTrackerNames` — pushes the last one out of
+  sight instead of onto a second line.
+- **A SHOOT DAY is a filter over the things that MOVE: cameras and props.**
+  One setup and one position get used across several days — the studio, the
+  positions and the frame grabs stay put while the set is struck, re-dressed
+  and re-rigged. So `setup.days` is a list of `{ id, name }`,
+  `setup.activeDayId` says which is open, and **every camera and every prop
+  carries a `dayId`** — one day each, never several. Picked in the left
+  panel's *Shoot day* block, which is deliberately the same shape as the
+  *Position* block under it, because they are the same kind of control.
+  - **A new day starts its cameras FRESH but COPIES the props**, at the
+    positions they currently stand in. The asymmetry is the point: cameras get
+    re-rigged, so copies would only be deleted again, while the set is usually
+    yesterday's set with things nudged, and starting empty would mean
+    re-placing a dressed room every morning.
+  - **A copied prop is a new object with a NEW ID.** Sharing them — which is
+    what a day filter over one array amounts to — means dragging a table on
+    Day 2 also drags it on Day 1, silently rewriting a plan that has already
+    been shot. New ids specifically because `updateProp` finds a prop by id
+    and would otherwise patch whichever day's copy came first. A tracker
+    parked on the original is re-pointed at the copy on the way, or the T-bar
+    carries on driving yesterday's prop, invisibly, on another day's plan.
+  - **`Store.getCameras()` and `Store.getProps()` are day-filtered, and
+    everything that lists, draws, hit-tests or exports goes through them** —
+    both panel lists, the canvas, the inspectors, all three renderers. The
+    filter is applied once, there, rather than in each of them. Props are
+    stamped with the day inside `addProp` rather than at the call site,
+    because the canvas's add-prop tool creates them and a prop with no day is
+    invisible the instant it is placed — which reads as the click not
+    registering.
+  - **The panels have to go through those accessors too, and once didn't.**
+    `renderCameraList`, the camera count, the inspector's picker and the
+    Delete guard all read `scene.cameras` straight off the scene, so the
+    Store was filtered correctly and the left panel still listed every day's
+    cameras. Every test written at the time asked the *Store* and passed
+    while the thing on screen was wrong — so a test claiming a day is
+    filtered has to assert on the rendered rows (`#camera-list`,
+    `#prop-list`), not on `getCameras()`/`getProps()`.
+  - **The list structure keys have to be day-scoped as well**, and this one
+    hides from the obvious test. Selecting a day changes neither
+    `scene.props` nor `scene.cameras`, so a key built from the position's
+    whole set is *identical* either side of the switch: the rebuild is
+    skipped and the day you left stays on screen. Adding a day happens to
+    change the set, so a test that only ever calls `addDay` passes against a
+    broken key — it takes a `selectDay` between two existing days to catch
+    it.
+  - **`Store.findCamera(id)` is the unfiltered lookup, and the distinction is
+    load-bearing.** Live tracking and an in-progress recording hold a camera
+    *id*; searching the day-filtered list means a recording silently stops
+    writing the moment someone switches day mid-move. Anything resolving an
+    id uses `findCamera`; anything showing a list uses `getCameras`.
+  - **Exports go through `Store.getSceneForDay()`**, which returns the scene
+    with this day's cameras and a `dayName` on it. That is a render-time view,
+    not the stored scene. Filtering at the call site rather than in the three
+    renderers is what stops the floor PNG, the CSV and the report disagreeing
+    about which day they are drawing — they drift apart badly enough as it is.
+  - **The day is in every exported filename**, and printed on the PNG and the
+    report. Re-exporting overwrites, so without it Day 2's plan silently
+    replaces Day 1's on the shared drive — and two days of the same position
+    differ only by where the cameras are, which is exactly what someone
+    holding the wrong one would not notice. A scene with no `dayName` (a raw
+    scene, a test) omits it rather than printing an empty dash.
+  - **A new day starts with one camera per position, not with copies.** The
+    cameras are re-rigged for the day — that is what makes it a different day
+    — so copies would only mean deleting them again. One each, because a day
+    you can't inspect or place a camera in is the same dead end a camera-less
+    scene is: `ensureCamera` now tops up **per day**, not per scene.
+  - **Deleting a day deletes its cameras and its props in every position**,
+    and the last day can't be deleted — a setup with no days has no cameras
+    anywhere.
+  - **Setups saved before days existed land entirely on "Day 1"**
+    (`ensureDays`), which also repairs a dangling `activeDayId` or an entity
+    whose day was hand-edited away.
+  - **But a PROP with no day is copied onto every day, not stamped onto the
+    first.** Before props belonged to days they were shared by all of them, so
+    "each day keeps what it had" means every day keeps the lot. Stamping is
+    what the word suggests and it is wrong here: a setup already carrying Day
+    1 and Day 2 — saved in the window where cameras had days and props did not
+    — came back with its whole set on Day 1 and Day 2 empty, which reads as
+    the dressing having been deleted. **A missing `dayId` and an unknown one
+    are different repairs**: missing means shared (copy to all), unknown means
+    a broken reference (repair onto the first day). Cameras left day-less and shown on every
+    day was the alternative, and it makes the filter mean two different things
+    depending on a camera's age. Both failure modes present identically —
+    "the camera list is empty and nothing brings it back" — so they are
+    repaired on load rather than diagnosed later.
+  - Colour uniqueness is now tried setup-wide **and then day-wide** (see
+    `pickCameraColor`): a week of shooting exhausts ten colours in three days,
+    but the thing that actually matters — no two cameras on one plan sharing a
+    colour — stays satisfiable, because only one day is ever drawn at a time.
 - Positions (scenes) are shots within a setup. **The camera carries over when
   a new position is added; props don't** — a camera is studio hardware present
   for every shot, props are dressed per shot. Copies keep the same camera id
@@ -299,6 +413,32 @@ theorising about the connection — every connection bug so far failed
   setup + position, so it's the same plan redrawn). If the folder is
   unreachable the export falls back to a normal download and the toast says
   so — a missing drive mapping costs the shared folder, never the export.
+- **The floor PNG comes in two variants: props only, and the full plan.**
+  Props only is the header button and the everyday one
+  (`buildCanvas(setup, scene, { cameras: false })`) — that PNG's job is to be
+  the floor layer, and on the floor the camera positions are clutter, since
+  nothing down there lines up against them. *Export Floor PNG (with camera
+  positions)* in the More menu draws the same plan with them on it. Three
+  things follow from that:
+  - **Props-only excludes recorded moves too**, not just the icons. A dashed
+    path with no icon and no caption is an unexplained line on the floor.
+  - **The variant is printed in the heading** (`— props only`) as well as
+    suffixed onto the filename (`..._floor_props_only.png`, so the two
+    coexist instead of overwriting each other). Once it's a layer in Disguise
+    nobody can see the filename, and for a scene whose cameras sit off the
+    floor the two pictures are otherwise identical. **The suffix follows the
+    content, not which button is in the header** — the plain `..._floor.png`
+    has always been the one with cameras on it, and renaming when props-only
+    moved into the header would have had the new default quietly overwrite
+    the full plans already sitting on `Z:` and being read by a show.
+  - **The empty check differs**: props-only refuses when there are no props,
+    ignoring cameras entirely, because `ensureCamera()` means a scene always
+    has one — checking both would export an empty black rectangle.
+  They're two buttons rather than one with a checkbox because the menu is
+  shut when the header's Export button is pressed, so a toggle there would
+  silently decide which of the two you got. The ids
+  (`btn-export-floor-png-props`, `btn-export-floor-png`) name the *content*,
+  so swapping which one sits in the header is a markup change alone.
 - **There are THREE renderers of the same scene, and they drift apart
   silently.** `js/canvas.js` draws the screen; `js/floorPngExport.js` redraws
   it for Disguise; `js/reportExport.js` redraws it again for print. Cameras
@@ -318,13 +458,12 @@ theorising about the connection — every connection bug so far failed
   the path, the caption or the Start marker from either renderer and its
   tests fail.
   They are **not** required to show the same thing, though — see the next
-  point. Where they legitimately differ: the PNG is white-on-black because
-  that is what Disguise reads; the report is each entity's own colour on
-  white. All three draw `camera.png` (each with its own `Image`, since none
+  point. Where they legitimately differ: the PNG is on black because that is
+  what Disguise reads; the report is on white. All three draw `camera.png` (each with its own `Image`, since none
   exposes its own) with the same wedge fallback while it loads — the PNG
-  tints it flat white, the report tints it per camera, and that tint is
-  cached per colour AND size because a report holds several camera positions
-  in different colours at one scale. The report also draws a recorded path
+  tints it per camera and so does the report, and in both the tint is cached
+  per colour AND size because one page holds several camera positions in
+  different colours at one scale. The report also draws a recorded path
   **dashed** — on white, beside solid prop outlines in the same palette, a
   solid stroke reads as another piece of set rather than a move.
   The report's drawing coordinates stay in a CSS-pixel space of at most
@@ -359,6 +498,46 @@ theorising about the connection — every connection bug so far failed
   The thresholds are the whole behaviour, so `test/liveRecording.test.js`
   pins both ends of the range — too low and the jitter is back, too high and a
   real push-in is discarded — and is mutation-checked against both.
+- **No two cameras in a setup share a colour.** The colour is what identifies
+  a camera on the exported plan, so a repeat says two different marks are the
+  same camera. `factories.pickCameraColor` takes the first colour no camera in
+  the setup is using, from a `CAMERA_COLORS` palette of ten — cameras get
+  their own, longer list than `PROP_COLORS` (whose first six it starts with,
+  so existing setups look unchanged), because props are white silhouettes on
+  the export and don't have this problem. Four things worth knowing:
+  - **Picked by what's TAKEN, never by counting.** A count lands back on a
+    colour still in use after a delete — the identical trap the camera *names*
+    already guard against, two rows along in the same handler.
+  - **Scoped to the whole setup** (`Store.getSetupCameraColors`), not the open
+    position. Positions share cameras, so a per-position answer gets it wrong
+    the moment a camera is deleted from one position while surviving in
+    another. The invariant is per camera *id*, not per position: one camera
+    appearing in several positions in one colour is correct.
+  - **Ten colours, then it repeats.** Hues are spread round the wheel rather
+    than being shades of each other, and past ten any addition would be a pair
+    too close to tell apart at plan scale — which looks unique without being
+    usable. The eleventh camera cycling is deliberate: a repeat is the
+    least-bad outcome, and returning no colour would draw it as nothing.
+  - Freed colours come back — delete a camera and the next one added takes
+    its colour rather than burning it.
+- **On the exported PNG, props are white and cameras are their own colour.**
+  The white silhouette is what Disguise lines the real piece up against, so
+  props (and their names, and the red centre dots) stay exactly as they were.
+  Cameras, their recorded paths, their Start/End marks and their captions
+  carry the same colour they have on screen — everything in this export was
+  white until a plan came back with cameras parked on the props they were
+  shooting, where a white icon on a white fill was simply invisible. Nothing
+  on the floor is aligned against a camera, so this costs Disguise nothing.
+  Two things that go with it:
+  - **The icon tint cache is keyed on colour AND size.** It was a single slot
+    back when every icon was white; left that way, the second camera is served
+    the first one's tinted icon and a scene comes out one colour.
+  - **A camera with no `color` falls back to white**, so a setup saved before
+    cameras carried one degrades to exactly this export's previous appearance
+    rather than to something invisible.
+  The black label halo does double duty here: it is what makes a white prop
+  name readable *on* a prop, and what keeps a mid-tone camera caption legible
+  against one.
 - **On the exported PNG, a camera with a recorded move is drawn as the move
   alone**: the path plus a Start and an End icon, with its static icon and
   red centre dot suppressed. Drawing both was misleading rather than merely
@@ -395,8 +574,8 @@ theorising about the connection — every connection bug so far failed
     spent on white. Trimming the height alone just moved the empty space to
     the sides and the plan came out no bigger; both axes have to follow the
     content.
-- **The report places its labels in a pass of their own, after everything is
-  drawn.** Two camera positions a metre apart put four labels — a name, a lens
+- **The report AND the floor PNG place their labels in a pass of their own,
+  after everything is drawn.** Two camera positions a metre apart put four labels — a name, a lens
   line, a Start and an End — in the same square inch, and drawn where each
   naturally falls they overprint into a stack nobody can read. So labels are
   *collected* while drawing and placed at the end, each nudged straight down a
@@ -415,12 +594,57 @@ theorising about the connection — every connection bug so far failed
   - Every label is **haloed** (white `strokeText` under the fill), so one that
     still lands on a path or an icon reads against it rather than merging in.
   - Labels drawing last also puts them on top of every icon and path.
+  `js/floorPngExport.js` carries its own copy of the same pass (same
+  priorities, same one-block name+lens rule, same cap) — added after a real
+  plan came back with camera captions stacked on each other and on the prop
+  names, because cameras get parked right up against the props they're
+  shooting and that's how the shot was set up, not something to design away.
+  Two differences from the report's, both forced by the palette:
+  - **The halo is BLACK there, not white.** Props in that export are solid
+    white fills and the text is white, so a label landing on one didn't just
+    look cluttered — it disappeared. The outline is what separates the
+    letters from the fill; on the black background it costs nothing.
+  - **`LABEL_LINE_H` is 36, not 15**, because that canvas is ~245 px/m and
+    its text is 30px — it's the name/lens gap the export already used.
+  Neither pass avoids the *props themselves*, only other labels; the halo is
+  what handles a label that lands on one. Pushing labels clear of every
+  footprint too would move them far enough from their icon to stop reading as
+  that camera's label, which is the same reason the nudge is capped.
+  Comparing a label's position between two renders **is** valid in
+  `test/floorPngExport.test.js`, unlike the report's — that export's bounds
+  come from the studio floor alone, so the same entity lands on the same pixel
+  whatever else is in the scene.
 - **The printed report leads with the cameras, then the props.** Lens and
   height are what a shot gets set up from and neither is readable off the
   drawing, so the Camera Positions table comes first and the props — the
   dressing that goes around it — sit under it. A camera that moved has no
   single position, so its row reports the end of the move and the point count
   instead.
+- **A PROP can be hidden too, and it is the OPPOSITE of hiding a camera: it
+  comes off the canvas AND out of every export.** The two look like the same
+  feature and are not, so the next bullet's camera rule must not be "tidied"
+  to match this one, or vice versa. A hidden prop means *this piece isn't in
+  this shot* — it is the alternative to deleting it — so a plan that still
+  drew it would be wrong in exactly the direction that matters: something on
+  the floor PNG that isn't on the floor. A hidden camera means *get this mark
+  out of my way while I place another*, and dropping it from the plan would
+  lose a position the crew shoots from with nothing on the page to say so.
+  - `js/canvas.js` draws and hit-tests `getVisibleProps()`; `getSceneForDay()`
+    hands the exports **visible props but all cameras**, which looks
+    inconsistent on the line and is the whole rule in one place.
+  - **Hiding is per day and per position for free**, since props already are —
+    which is what makes it usable as "not in today's shot" rather than a
+    global strike. *Show All Props* likewise unhides the **open day only**:
+    pressing it today must not un-strike a piece on a day already shot that
+    way.
+  - `prop.hidden` is persisted with the setup; absent reads as visible, so
+    nothing needed migrating. A hidden prop keeps its row, stays editable,
+    stays selectable and stays assignable to a tracker — otherwise Hide is
+    just a slower Delete.
+  - The eye button calls `stopPropagation()`, or the row's own click handler
+    fires too and hiding a prop silently re-points the inspector at it. The
+    headless DOM shim doesn't bubble, so the test spies on the *call* — an
+    outcome-based test there passes with the guard deleted.
 - **A camera position can be hidden, and that is a CANVAS-ONLY setting.**
   Several camera positions in one prop layout overlap into an unreadable
   pile, so each row in the Cameras list carries Hide/Show (`camera.hidden`,
@@ -432,6 +656,10 @@ theorising about the connection — every connection bug so far failed
   camera from the plan the crew shoots from, and an exported PNG gives no
   hint that a camera was omitted. `test/floorPngExport.test.js` pins it, and
   the test is mutation-checked — making the export respect `hidden` fails it.
+  **This is deliberately the opposite of a hidden PROP** (previous bullet),
+  which does come out of every export; the two rules are pinned side by side
+  in `test/sidebarCameras.test.js` so that changing one to match the other
+  fails loudly rather than reading as a tidy-up.
   A hidden camera keeps its row, stays editable in the Inspector and stays
   assignable to a tracker; it just isn't drawn and can't be grabbed on the
   canvas (hit-testing walks the same visible list, or it would be an
@@ -441,11 +669,13 @@ theorising about the connection — every connection bug so far failed
   tablet also declutters the desktop.
 - **The header carries only what a shoot day reaches for**, and everything
   else is behind its *More* menu. In the header: *+ Add Prop*, *+ Add Camera
-  Position*, then New, Save, Load setup, Export Floor PNG (Disguise), then
+  Position*, then New, Save, Load setup, Export Floor PNG (props), then
   the px/m zoom field. In the menu: Show grid, Show studio sketch, Export
-  CSV, Report / Print, Export/Import .json. Zoom is in the header rather than
-  the menu because it gets nudged repeatedly while framing a layout, which a
-  menu that must be reopened each time works against. On a tablet the header is the only thing between the
+  Floor PNG (with camera positions), Export CSV, Report / Print, Help,
+  Export/Import .json.
+  Zoom is in the header rather than the menu because it gets nudged repeatedly
+  while framing a layout, which a menu that must be reopened each time works
+  against. On a tablet the header is the only thing between the
   crew and the canvas, so length there is the constraint being managed —
   adding a button means deciding it belongs in that set. Nothing is ever
   *removed* to make room and no ids change, so `toolbar.js` and `sidebar.js`
